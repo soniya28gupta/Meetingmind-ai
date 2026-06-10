@@ -1,0 +1,63 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code related
+.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+build/
+/coverage/
+
+# Android build outputs and artifacts
+android/build/
+android/app/debug/
+android/app/profile/
+android/app/release/
+*.apk
+*.aab
+
+# iOS build outputs
+ios/build/
+ios/DerivedData/
+
+# Symbolication and Obfuscation
+app.*.symbols
+app.*.map.json
+
+# Local Environment and Secrets
+.env
+.env.*
+
+# Unwanted Personal / Transfer Folders
+Quick Share/
+Meesho/
+.nearby/
+Bluetooth/
+Downloads/
+Documents/
+Media/
