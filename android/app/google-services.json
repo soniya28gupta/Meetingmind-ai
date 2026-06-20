@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "221306600744",
+    "project_id": "meetingmind-ai-159c9",
+    "storage_bucket": "meetingmind-ai-159c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:221306600744:android:0ba2e0cc15dad9f33e641d",
+        "android_client_info": {
+          "package_name": "com.meetingmind.ai.meetingmind_ai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "221306600744-dh6pjt93r9fou4c5lvnbdp2pge733eab.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.meetingmind.ai.meetingmind_ai",
+            "certificate_hash": "0e8dff484133407207bec8966fbdefa14628c1bc"
+          }
+        },
+        {
+          "client_id": "221306600744-vkbipf3vl9m8sgs28gj814usn8giet2o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAn-7rpP26nCuJ_hlYiYwvwZkEsavaYBuY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "221306600744-vkbipf3vl9m8sgs28gj814usn8giet2o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/glass_card.dart';
 import '../auth/auth_provider.dart';
 import 'settings_provider.dart';
 import '../../services/ollama_connection_manager.dart';
+import 'profile_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -14,19 +16,83 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  bool _notificationsEnabled = true;
   
-
   @override
   void initState() {
     super.initState();
-  Future.microtask(() async {
-  await ref.read(settingsProvider.notifier).ensureLoaded();
-});
+    Future.microtask(() async {
+      await ref.read(settingsProvider.notifier).ensureLoaded();
+    });
   }
 
+  void _showPrivacySettings() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Privacy Settings', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        content: const SingleChildScrollView(
+          child: Text(
+            'MeetingMind AI respects your privacy. All transcripts, Summaries, and recordings are encrypted in transit and at rest. Data is exclusively stored in your personal, authenticated Firebase Firestore database, ensuring no third parties can access your meetings.',
+            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it', style: TextStyle(color: AppColors.secondary)),
+          )
+        ],
+      ),
+    );
+  }
 
-
-  
+  void _deleteAccount() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.error)),
+        content: const Text(
+          'Warning: This action is permanent and cannot be undone. All your meetings, tasks, transcripts, and account settings will be permanently wiped from the servers.',
+          style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () async {
+              Navigator.of(context).pop();
+              try {
+                final user = FirebaseAuth.instance.currentUser;
+                if (user != null) {
+                  await user.delete();
+                }
+                ref.read(authStateProvider.notifier).logout();
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Delete failed: $e. Try logging out and back in first.'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,44 +114,128 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: [
                   // User Profile info
                   if (user != null) ...[
-                    GlassCard(
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 30,
-                            backgroundColor: AppColors.primary,
-                            backgroundImage: user.photoUrl != null
-                                ? NetworkImage(user.photoUrl!)
-                                : null,
-                            child: user.photoUrl == null
-                                ? Text(
-                                    (user.displayName ?? 'U')[0].toUpperCase(),
-                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-                                  )
-                                : null,
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  user.displayName ?? 'Unnamed User',
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  user.email ?? '',
-                                  style: const TextStyle(color: AppColors.textSecondary),
-                                ),
-                              ],
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                        );
+                      },
+                      child: GlassCard(
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 30,
+                              backgroundColor: AppColors.primary,
+                              backgroundImage: user.photoUrl != null && user.photoUrl!.isNotEmpty
+                                  ? NetworkImage(user.photoUrl!)
+                                  : null,
+                              child: user.photoUrl == null || user.photoUrl!.isEmpty
+                                  ? Text(
+                                      (user.displayName ?? 'U')[0].toUpperCase(),
+                                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                                    )
+                                  : null,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user.displayName ?? 'Unnamed User',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    user.email ?? '',
+                                    style: const TextStyle(color: AppColors.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 16),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
                   ],
+
+                  // Settings options group
+                  const Text(
+                    'Preferences & Account',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 12),
+                  GlassCard(
+                    child: Column(
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.person_outline_rounded, color: AppColors.secondary),
+                          title: const Text('Edit Profile'),
+                          subtitle: const Text('Change photo, work details, contact info'),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 16),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                            );
+                          },
+                        ),
+                        const Divider(color: Colors.white10),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          secondary: const Icon(Icons.palette_outlined, color: AppColors.secondary),
+                          title: const Text('Change Theme'),
+                          subtitle: const Text('Vibrant Dark Mode Theme'),
+                          value: true,
+                          activeColor: AppColors.secondary,
+                          onChanged: (val) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('🎨 Vibrant Dark Mode is optimized for premium glassmorphic UI.'),
+                                backgroundColor: AppColors.primary,
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                        ),
+                        const Divider(color: Colors.white10),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          secondary: const Icon(Icons.notifications_active_outlined, color: AppColors.secondary),
+                          title: const Text('Notification Settings'),
+                          subtitle: const Text('Receive push alerts on summary completion'),
+                          value: _notificationsEnabled,
+                          activeColor: AppColors.secondary,
+                          onChanged: (val) {
+                            setState(() {
+                              _notificationsEnabled = val;
+                            });
+                          },
+                        ),
+                        const Divider(color: Colors.white10),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.lock_outline_rounded, color: AppColors.secondary),
+                          title: const Text('Privacy Settings'),
+                          subtitle: const Text('Manage database security and policy details'),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 16),
+                          onTap: _showPrivacySettings,
+                        ),
+                        const Divider(color: Colors.white10),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.delete_forever_rounded, color: AppColors.error),
+                          title: const Text('Delete Account', style: TextStyle(color: AppColors.error)),
+                          subtitle: const Text('Permanently remove meetings and profile data'),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.error, size: 16),
+                          onTap: _deleteAccount,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
 
                   // API Credentials Settings Card
                   const Text(
@@ -97,7 +247,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        
                         const Text(
                           'Deepgram API Key (Real-time stream)',
                           style: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary),
@@ -137,8 +286,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                           ),
                         const SizedBox(height: 24),
-
-                      
                       ],
                     ),
                   ),

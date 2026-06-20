@@ -37,11 +37,11 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 });
 
 final meetingRepositoryProvider = Provider<MeetingRepository>((ref) {
-  return IsarMeetingRepository();
+  return IsarMeetingRepository(ref);
 });
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
-  return IsarTaskRepository();
+  return IsarTaskRepository(ref);
 });
 
 final ollamaHealthProvider = FutureProvider<Map<String, dynamic>>((ref) async {

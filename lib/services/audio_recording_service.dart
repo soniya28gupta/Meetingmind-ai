@@ -81,14 +81,22 @@ class AudioRecordingService {
 
   Future<void> pauseRecording() async {
     if (!_isRecording || _isPaused) return;
-    await _recorder.pause();
+    try {
+      await _recorder.pause();
+    } catch (e) {
+      print("[AudioRecordingService] Error pausing recorder: $e");
+    }
     _isPaused = true;
     _timer?.cancel();
   }
 
   Future<void> resumeRecording() async {
     if (!_isRecording || !_isPaused) return;
-    await _recorder.resume();
+    try {
+      await _recorder.resume();
+    } catch (e) {
+      print("[AudioRecordingService] Error resuming recorder: $e");
+    }
     _isPaused = false;
     _startTimer();
   }
@@ -102,7 +110,11 @@ class AudioRecordingService {
     await _recorderSubscription?.cancel();
     _recorderSubscription = null;
     
-    await _recorder.stop();
+    try {
+      await _recorder.stop();
+    } catch (e) {
+      print("[AudioRecordingService] Error stopping recorder: $e");
+    }
     await _fileSink?.close();
     _fileSink = null;
     

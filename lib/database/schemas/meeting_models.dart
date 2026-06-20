@@ -11,12 +11,19 @@ class UserModel {
   String? email;
   String? displayName;
   String? photoUrl;
+  String? phoneNumber;
+  String? bio;
+  String? company;
+  String? designation;
   DateTime? lastSynced;
 }
 
 @collection
 class MeetingModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
   
   String? title;
   DateTime? createdAt;
@@ -26,6 +33,20 @@ class MeetingModel {
   bool isRecording = false;
   String? detectedEmotion;
   double? emotionConfidence;
+  bool? isLocalEstimation;
+
+  // Wearable Sensor Metrics
+  double? heartRateAverage;
+  double? heartRatePeak;
+  double? stressAverage;
+  double? sleepScore;
+  double? engagementScore;
+  double? energyDrain;
+  String? wellnessInsightText;
+  String? stressAnalysis;
+  String? engagementAnalysis;
+  String? focusAnalysis;
+  String? energyAnalysis;
 
   final transcript = IsarLink<TranscriptModel>();
   final summary = IsarLink<SummaryModel>();
@@ -35,7 +56,7 @@ class MeetingModel {
   
   @Backlink(to: 'meeting')
   final decisions = IsarLinks<DecisionModel>();
-
+  
   @Backlink(to: 'meeting')
   final chatMessages = IsarLinks<ChatMessageModel>();
 }
@@ -43,6 +64,10 @@ class MeetingModel {
 @collection
 class TranscriptSegmentModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
+
   int? speaker; // Speaker index (e.g. 0, 1, 2)
   String? text;
   double startTime = 0.0; // In seconds
@@ -55,6 +80,9 @@ class TranscriptSegmentModel {
 @collection
 class TranscriptModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
   
   @Backlink(to: 'transcript')
   final segments = IsarLinks<TranscriptSegmentModel>();
@@ -63,6 +91,10 @@ class TranscriptModel {
 @collection
 class SummaryModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
+
   String? executiveSummary;
   String? meetingNotes;
   String? keyTakeaways;
@@ -74,6 +106,10 @@ class SummaryModel {
 @collection
 class ActionItemModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
+
   String? description;
   DateTime? deadline;
   bool isCompleted = false;
@@ -87,6 +123,10 @@ class ActionItemModel {
 @collection
 class DecisionModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
+
   String? description;
 
   final meeting = IsarLink<MeetingModel>();
@@ -96,6 +136,10 @@ class DecisionModel {
 @collection
 class ChatMessageModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
+
   String? message;
   bool isUser = true;
   DateTime? timestamp;
@@ -107,7 +151,9 @@ class ChatMessageModel {
 class SpeakerProfileModel {
   Id id = Isar.autoIncrement;
 
-  @Index(unique: true, replace: true)
+  @Index()
+  String? userId; // Owner User ID
+
   String? name;
   
   int? colorValue; // Color integer
@@ -120,6 +166,9 @@ class SpeakerProfileModel {
 @collection
 class SpeakerEmotionModel {
   Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId; // Owner User ID
 
   String? emotion;
   double confidence = 0.0;
@@ -134,6 +183,9 @@ class SpeakerEmotionModel {
 class SpeakerAnalyticsModel {
   Id id = Isar.autoIncrement;
 
+  @Index()
+  String? userId; // Owner User ID
+
   double speakingTimeSeconds = 0.0;
   int wordCount = 0;
   double participationPercentage = 0.0;
@@ -141,4 +193,51 @@ class SpeakerAnalyticsModel {
 
   final speakerProfile = IsarLink<SpeakerProfileModel>();
   final meeting = IsarLink<MeetingModel>();
+}
+
+@collection
+class SensorReadingModel {
+  Id id = Isar.autoIncrement;
+
+  @Index()
+  String? userId;
+
+  String? deviceId;
+  DateTime? timestamp;
+  int? heartRate;
+  double? stress;
+  int? steps;
+  int? battery;
+  double? sleep;
+  bool isSynced = false;
+}
+
+@collection
+class DeviceInfoModel {
+  Id id = Isar.autoIncrement;
+
+  @Index(unique: true, replace: true)
+  String? deviceId;
+
+  String? name;
+  String? type;
+  int? battery;
+  String? connectionState;
+  DateTime? lastConnectedAt;
+  bool isAutoReconnectEnabled = true;
+}
+
+@collection
+class DailyMetricsModel {
+  Id id = Isar.autoIncrement;
+
+  @Index(unique: true, replace: true)
+  DateTime? date;
+
+  int? totalSteps;
+  double? averageHeartRate;
+  double? sleepHours;
+  double? sleepScore;
+  double? stressScore;
+  int? batteryLevel;
 }

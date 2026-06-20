@@ -16,6 +16,7 @@ import '../../services/speaker_service.dart';
 import 'meeting_chat_provider.dart';
 import 'meetings_provider.dart';
 import '../../services/ollama_connection_manager.dart';
+import '../../services/emotion_health_service.dart';
 
 class MeetingDetailsScreen extends ConsumerStatefulWidget {
   final int meetingId;
@@ -808,6 +809,12 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   style: const TextStyle(height: 1.5, fontSize: 14, color: AppColors.textPrimary),
                 ),
               ),
+              const SizedBox(height: 24),
+            ],
+
+            // Wearable Wellness Analytics Section
+            if (meeting.heartRateAverage != null) ...[
+              BiometricInsightsCard(meeting: meeting),
               const SizedBox(height: 24),
             ],
 
@@ -2736,151 +2743,340 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
   }
 
   Widget _buildVoiceEmotionCard(MeetingModel meeting) {
+    final healthState = ref.watch(emotionHealthServiceProvider);
+    
     final emotion = meeting.detectedEmotion;
     final confidence = meeting.emotionConfidence ?? 0.0;
+    final isLocal = meeting.isLocalEstimation ?? false;
+    final hasEmotion = emotion != null && emotion.isNotEmpty && emotion.toLowerCase() != 'feature unavailable';
 
     String getEmoji(String emo) {
       switch (emo.toLowerCase()) {
-        case 'happy': return '😊';
-        case 'neutral': return '😐';
-        case 'stressed': return '😟';
+        case 'happy': return '😀';
+        case 'excited': return '🤩';
+        case 'confident': return '😎';
+        case 'calm': return '😌';
+        case 'concerned': return '😟';
         case 'frustrated': return '😡';
-        default: return '🧠';
+        case 'angry': return '😡';
+        case 'sad': return '😔';
+        case 'bored': return '😴';
+        case 'nervous': return '😨';
+        case 'thinking': return '🤔';
+        default: return '😐';
       }
     }
 
     Color getColor(String emo) {
       switch (emo.toLowerCase()) {
-        case 'happy': return AppColors.success;
-        case 'neutral': return AppColors.primary;
-        case 'stressed': return AppColors.warning;
-        case 'frustrated': return AppColors.error;
-        default: return AppColors.textSecondary;
+        case 'happy': case 'excited': return AppColors.secondary;
+        case 'confident': return AppColors.primary;
+        case 'calm': return AppColors.success;
+        case 'concerned': case 'nervous': return AppColors.warning;
+        case 'frustrated': case 'angry': return AppColors.error;
+        case 'thinking': return AppColors.accent;
+        default: return AppColors.textMuted;
       }
     }
 
-    if (emotion == null || emotion.isEmpty) {
+    // STATE 1: ANALYZING / PROCESSING
+    if (healthState.status == EmotionBackendStatus.processing || 
+        healthState.status == EmotionBackendStatus.analyzing) {
       return GlassCard(
-        borderColor: AppColors.textMuted.withValues(alpha: 0.2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'No voice tone analysis data available for this meeting.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _isGeneratingSummary
-                  ? null
-                  : () => _runSummaryGeneration(meeting),
-              icon: const Icon(Icons.analytics_outlined, size: 18),
-              label: const Text('Analyze Voice Tone Emotion'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        borderColor: AppColors.secondary.withValues(alpha: 0.3),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
+          child: Column(
+            children: const [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  color: AppColors.secondary,
+                  strokeWidth: 3,
+                ),
               ),
-            ),
-          ],
+              SizedBox(height: 16),
+              Text(
+                'Processing Voice Features...',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Running speech intelligence pipeline on Flask server...',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    if (emotion.toLowerCase() == 'feature unavailable') {
+    // RETRYING / RECONNECTING STATE
+    if (healthState.status == EmotionBackendStatus.retrying) {
+      final attemptStr = "Attempt ${healthState.retryAttempt}/3";
       return GlassCard(
-        borderColor: AppColors.error.withValues(alpha: 0.2),
+        borderColor: AppColors.warning.withValues(alpha: 0.3),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
+          child: Column(
+            children: [
+              const SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  color: AppColors.warning,
+                  strokeWidth: 3,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Emotion Analysis Status: Retrying ($attemptStr)',
+                style: const TextStyle(
+                  color: AppColors.warning,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                healthState.errorMessage ?? 'Reconnecting to Flask backend...',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // STATE 2: CONNECTED (No results yet)
+    if (!hasEmotion && healthState.status == EmotionBackendStatus.connected) {
+      return GlassCard(
+        borderColor: AppColors.success.withValues(alpha: 0.3),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: const [
+                  Icon(
+                    Icons.check_circle_outline_rounded,
+                    color: AppColors.success,
+                    size: 24,
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Emotion Analysis Status: Connected',
+                      style: TextStyle(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Voice tone emotion analysis backend is online on port 5000. Ready to analyze speech patterns.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _isGeneratingSummary
+                    ? null
+                    : () => _runSummaryGeneration(meeting),
+                icon: const Icon(Icons.analytics_outlined, size: 18),
+                label: const Text('Analyze Voice Tone Emotion'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // STATE 5: FAILED (No emotion, offline/fallback active)
+    if (!hasEmotion && (healthState.status == EmotionBackendStatus.offline || healthState.status == EmotionBackendStatus.fallbackActive)) {
+      return GlassCard(
+        borderColor: AppColors.error.withValues(alpha: 0.3),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: const [
+                  Icon(
+                    Icons.error_outline_rounded,
+                    color: AppColors.error,
+                    size: 24,
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Voice Tone Backend Offline',
+                      style: TextStyle(
+                        color: AppColors.error,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Could not connect to the Flask emotion analysis server on port 5000.',
+                style: TextStyle(color: AppColors.textPrimary.withValues(alpha: 0.9), fontSize: 13, height: 1.4),
+              ),
+              if (healthState.errorMessage != null && healthState.errorMessage!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
+                  ),
+                  child: Text(
+                    'Root Cause Details:\n${healthState.errorMessage}',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _isGeneratingSummary
+                    ? null
+                    : () => _runSummaryGeneration(meeting),
+                icon: const Icon(Icons.offline_bolt_outlined, size: 18),
+                label: const Text('Run Local Emotion Estimation'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.secondary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _isGeneratingSummary
+                    ? null
+                    : () => ref.read(emotionHealthServiceProvider.notifier).checkConnection(isPassive: false),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Retry Connection to Backend'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: BorderSide(color: AppColors.textSecondary.withValues(alpha: 0.3)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+
+        final cardColor = getColor(emotion ?? '');
+    final emoji = getEmoji(emotion ?? '');
+    final isOnline = healthState.status == EmotionBackendStatus.connected;
+
+    // STATE 3 & 4: COMPLETED / FALLBACK ACTIVE (Showing results)
+    return GlassCard(
+      borderColor: cardColor.withValues(alpha: 0.4),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+                Text(
+                  emoji,
+                  style: const TextStyle(fontSize: 38),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Detected Emotion: $emotion',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                          color: cardColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Confidence: ${(confidence * 100).toStringAsFixed(1)}%',
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: AppColors.textMuted),
+                  tooltip: 'Re-analyze',
+                  onPressed: _isGeneratingSummary
+                      ? null
+                      : () => _runSummaryGeneration(meeting),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(color: AppColors.surfaceLight),
+            const SizedBox(height: 8),
+            
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: (isLocal || !isOnline) ? AppColors.warning : AppColors.success,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Voice tone analysis backend is offline.',
-                    style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold, fontSize: 13),
+                    (isLocal || !isOnline)
+                        ? 'Using local emotion estimation (based on transcript heuristics).'
+                        : 'Voice tone analysis active (powered by server DSP models).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: (isLocal || !isOnline) ? AppColors.warning : AppColors.secondary,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'To enable this feature, make sure the Flask emotion analysis server is running and accessible on port 5000.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _isGeneratingSummary
-                  ? null
-                  : () => _runSummaryGeneration(meeting),
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Retry Analysis'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
           ],
         ),
-      );
-    }
-
-    final cardColor = getColor(emotion);
-    final emoji = getEmoji(emotion);
-
-    return GlassCard(
-      borderColor: cardColor.withValues(alpha: 0.3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                emoji,
-                style: const TextStyle(fontSize: 36),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Detected Emotion: $emotion',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: cardColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Confidence: ${(confidence * 100).toStringAsFixed(1)}%',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded, color: AppColors.textMuted),
-                onPressed: _isGeneratingSummary
-                    ? null
-                    : () => _runSummaryGeneration(meeting),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(color: AppColors.surfaceLight),
-          const SizedBox(height: 8),
-          const Text(
-            'Disclaimer: Speech emotion recognition is based on voice tone heuristics and should not be used for medical or professional psychological diagnostics.',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 11, height: 1.4),
-          ),
-        ],
       ),
     );
   }
@@ -2896,6 +3092,7 @@ class PulsingThinkingBubble extends StatefulWidget {
 class _PulsingThinkingBubbleState extends State<PulsingThinkingBubble> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   Timer? _messageTimer;
+
   int _messageIndex = 0;
   
   final List<Map<String, dynamic>> _messages = [
@@ -3036,6 +3233,198 @@ class ChatErrorBubble extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class BiometricInsightsCard extends StatefulWidget {
+  final MeetingModel meeting;
+
+  const BiometricInsightsCard({super.key, required this.meeting});
+
+  @override
+  State<BiometricInsightsCard> createState() => _BiometricInsightsCardState();
+}
+
+class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.meeting;
+    if (m.heartRateAverage == null) return const SizedBox();
+
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      borderColor: AppColors.secondary.withValues(alpha: 0.2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Row
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.favorite_rounded, color: AppColors.error, size: 22),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Meeting Wellness Analytics',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Biometric correlation & wellness coach insights',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    color: AppColors.textMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          if (_isExpanded) ...[
+            const Divider(color: Colors.white10, height: 1, thickness: 1),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Averages grid
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildMiniMetric('Avg HR', '${m.heartRateAverage!.toStringAsFixed(0)} bpm', AppColors.error),
+                      _buildMiniMetric('Peak HR', '${m.heartRatePeak!.toStringAsFixed(0)} bpm', AppColors.warning),
+                      _buildMiniMetric('Avg Stress', '${m.stressAverage!.toStringAsFixed(0)}%', AppColors.primary),
+                      _buildMiniMetric('Engagement', '${m.engagementScore!.toStringAsFixed(0)}%', AppColors.secondary),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Expandable insights list
+                  _buildInsightItem(
+                    title: 'Mental Strain & Stress',
+                    value: '${m.stressAverage!.toStringAsFixed(0)}%',
+                    insight: m.stressAnalysis ?? 'Telemetry indicates stable heart rate variability and moderate cognitive load.',
+                    color: AppColors.primary,
+                    icon: Icons.speed_rounded,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildInsightItem(
+                    title: 'Engagement & Focus',
+                    value: '${m.engagementScore!.toStringAsFixed(0)}%',
+                    insight: m.engagementAnalysis ?? 'High engagement detected, correlating speaking segments with steady cardiovascular load.',
+                    color: AppColors.secondary,
+                    icon: Icons.bolt_rounded,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildInsightItem(
+                    title: 'Meeting Energy Drain',
+                    value: m.energyDrain != null ? '${m.energyDrain!.toStringAsFixed(0)} kcal' : 'N/A',
+                    insight: m.energyAnalysis ?? 'Caloric drain and physical exhaustion calculated based on meeting duration and average heart rate elevation.',
+                    color: AppColors.accent,
+                    icon: Icons.battery_charging_full_rounded,
+                  ),
+                  if (m.focusAnalysis != null) ...[
+                    const SizedBox(height: 14),
+                    _buildInsightItem(
+                      title: 'Cognitive Focus Score',
+                      value: 'Active',
+                      insight: m.focusAnalysis!,
+                      color: AppColors.success,
+                      icon: Icons.psychology_rounded,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniMetric(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: color),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInsightItem({
+    required String title,
+    required String value,
+    required String insight,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: color, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                  ),
+                  Text(
+                    value,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                insight,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

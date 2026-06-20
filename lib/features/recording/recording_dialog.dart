@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
+import '../meetings/meeting_details_screen.dart';
 import 'recording_provider.dart';
+import '../wearable/wearable_provider.dart';
+import '../wearable/wearable_models.dart';
 
 class RecordingDialog extends ConsumerStatefulWidget {
   const RecordingDialog({super.key});
@@ -23,10 +26,17 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
     // Default meeting name prefilled with current date
     _titleController.text = 'Meeting - ${DateFormat('MMM dd, yyyy').format(DateTime.now())}';
     
-    // If a recording session is already active (not idle), skip setup phase
+    // If a recording session is already active (recording or paused), skip setup phase
     final recState = ref.read(recordingProvider);
-    if (recState.status != RecordingStatus.idle) {
+    if (recState.status == RecordingStatus.recording || recState.status == RecordingStatus.paused) {
       _setupPhase = false;
+    } else {
+      _setupPhase = true;
+      if (recState.status != RecordingStatus.idle) {
+        Future.microtask(() {
+          ref.read(recordingProvider.notifier).reset();
+        });
+      }
     }
   }
 
@@ -49,6 +59,43 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
     });
   }
 
+  void _showDiscardConfirmationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppColors.surfaceLight),
+          ),
+          title: const Text(
+            'Discard Meeting?',
+            style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
+          ),
+          content: const Text(
+            'Are you sure you want to discard this recording? All live transcripts and progress will be permanently lost.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Close confirmation dialog
+                ref.read(recordingProvider.notifier).stopMeeting(cancel: true);
+                Navigator.of(context).pop(); // Close recording dialog/sheet
+              },
+              child: const Text('Discard', style: TextStyle(color: AppColors.error)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final recordingState = ref.watch(recordingProvider);
@@ -68,6 +115,9 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
     final double dialogHeight = (screenHeight - viewInsetsBottom) * 0.75;
     final bool showActivePanel = !_setupPhase && 
                                  recordingState.status != RecordingStatus.idle && 
+                                 recordingState.status != RecordingStatus.connecting && 
+                                 recordingState.status != RecordingStatus.processing && 
+                                 recordingState.status != RecordingStatus.completed &&
                                  recordingState.status != RecordingStatus.error;
 
     return Container(
@@ -144,7 +194,8 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
               },
               child: const Text('Start Recording'),
             ),
-          ] else if (recordingState.status == RecordingStatus.finalizing) ...[
+          ] else if (recordingState.status == RecordingStatus.connecting ||
+                     recordingState.status == RecordingStatus.processing) ...[
             // LOADING OR COMPILING SUMMARY STATE
             const SizedBox(height: 40),
             const Center(
@@ -152,7 +203,7 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
             ),
             const SizedBox(height: 20),
             Text(
-              recordingState.activeMeeting == null
+              recordingState.status == RecordingStatus.connecting
                   ? 'Initializing Microphone & Deepgram Socket...'
                   : 'Compiling structured summary & decisions...',
               textAlign: TextAlign.center,
@@ -182,6 +233,124 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
               },
               child: const Text('Go Back'),
             ),
+          ] else if (recordingState.status == RecordingStatus.completed) ...[
+            // SUCCESS PANEL
+            const SizedBox(height: 20),
+            const Center(
+              child: Icon(
+                Icons.check_circle_outline_rounded,
+                color: AppColors.success,
+                size: 64,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Meeting Saved Successfully',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Structured summary, action items, and decisions have been generated.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+            if (recordingState.activeMeeting?.heartRateAverage != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.surfaceLight),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.analytics_outlined, color: AppColors.primary, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Meeting Biometrics Summary',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildSummaryMetric(
+                          'Avg HR',
+                          '${recordingState.activeMeeting!.heartRateAverage!.toStringAsFixed(0)} bpm',
+                          Icons.favorite_border,
+                          AppColors.error,
+                        ),
+                        _buildSummaryMetric(
+                          'Peak HR',
+                          '${recordingState.activeMeeting!.heartRatePeak!.toStringAsFixed(0)} bpm',
+                          Icons.trending_up,
+                          AppColors.warning,
+                        ),
+                        _buildSummaryMetric(
+                          'Avg Stress',
+                          '${recordingState.activeMeeting!.stressAverage!.toStringAsFixed(0)}%',
+                          Icons.speed,
+                          AppColors.primary,
+                        ),
+                        _buildSummaryMetric(
+                          'Engagement',
+                          '${recordingState.activeMeeting!.engagementScore!.toStringAsFixed(0)}%',
+                          Icons.bolt,
+                          AppColors.secondary,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (recordingState.errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                recordingState.errorMessage!,
+                style: const TextStyle(color: AppColors.warning, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 32),
+            GradientButton(
+              onPressed: () {
+                final meeting = recordingState.activeMeeting;
+                Navigator.of(context).pop(); // Close the recording dialog
+                if (meeting != null) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => MeetingDetailsScreen(meetingId: meeting.id),
+                    ),
+                  );
+                }
+              },
+              child: const Text('View Transcript & Summary'),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the recording dialog
+              },
+              child: const Text(
+                'Back to Dashboard',
+                style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 20),
           ] else ...[
             // ACTIVE RECORDING PANEL SCREEN
             Row(
@@ -219,6 +388,39 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
                           ),
                         ],
                       ),
+                      if (ref.watch(wearableProvider).connectionState == DeviceConnectionState.connected) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const _PulsatingHeartIcon(),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${ref.watch(wearableProvider).liveData.heartRate} bpm',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.error,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Stress: ${ref.watch(wearableProvider).liveData.stress.toStringAsFixed(0)}%',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -304,8 +506,7 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
                 IconButton.filledTonal(
                   style: IconButton.styleFrom(backgroundColor: AppColors.surfaceLight),
                   onPressed: () {
-                    ref.read(recordingProvider.notifier).stopMeeting(cancel: true);
-                    Navigator.of(context).pop();
+                    _showDiscardConfirmationDialog(context);
                   },
                   icon: const Icon(Icons.close, color: AppColors.textPrimary),
                   iconSize: 28,
@@ -339,7 +540,6 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
                   style: IconButton.styleFrom(backgroundColor: AppColors.success),
                   onPressed: () async {
                     await ref.read(recordingProvider.notifier).stopMeeting();
-                    if (context.mounted) Navigator.of(context).pop();
                   },
                   icon: const Icon(Icons.check, color: Colors.white),
                   iconSize: 28,
@@ -349,6 +549,31 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSummaryMetric(String label, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: AppColors.textMuted,
+          ),
+        ),
+      ],
     );
   }
 
@@ -372,6 +597,47 @@ class _RecordingDialogState extends ConsumerState<RecordingDialog> {
             ),
           );
         }),
+      ),
+    );
+  }
+}
+
+class _PulsatingHeartIcon extends StatefulWidget {
+  const _PulsatingHeartIcon();
+
+  @override
+  State<_PulsatingHeartIcon> createState() => _PulsatingHeartIconState();
+}
+
+class _PulsatingHeartIconState extends State<_PulsatingHeartIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+      lowerBound: 0.8,
+      upperBound: 1.2,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _controller,
+      child: const Icon(
+        Icons.favorite,
+        color: AppColors.error,
+        size: 14,
       ),
     );
   }

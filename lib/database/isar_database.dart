@@ -32,6 +32,9 @@ class IsarDatabase {
         SpeakerProfileModelSchema,
         SpeakerEmotionModelSchema,
         SpeakerAnalyticsModelSchema,
+        SensorReadingModelSchema,
+        DeviceInfoModelSchema,
+        DailyMetricsModelSchema,
       ],
       directory: dir.path,
       inspector: true, // Enable local database inspector for debugging

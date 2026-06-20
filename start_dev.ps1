@@ -30,6 +30,10 @@ Write-Host "🔗 Setting up port forwarding for Ollama and Emotion Backend..."
 & $ADB_EXE reverse tcp:11434 tcp:11434
 & $ADB_EXE reverse tcp:5000 tcp:5000
 
+# Start Flask Backend automatically in the background
+Write-Host "🐍 Starting Flask Emotion Analysis server in background..."
+Start-Process -FilePath "python" -ArgumentList "lib/services/backend/app.py" -WindowStyle Hidden
+
 
 # 3. Clean previous run state (optional force-stop and clear app data)
 Write-Host "🧹 Stopping previous app instances and clearing local cache..."

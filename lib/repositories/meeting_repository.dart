@@ -1,6 +1,10 @@
+import 'dart:math';
 import 'package:isar/isar.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/isar_database.dart';
 import '../database/schemas/meeting_models.dart';
+import '../providers/app_providers.dart';
+import '../services/firestore_service.dart';
 
 abstract class MeetingRepository {
   Future<List<MeetingModel>> getAllMeetings();
@@ -27,22 +31,43 @@ abstract class MeetingRepository {
 }
 
 class IsarMeetingRepository implements MeetingRepository {
+  final Ref _ref;
+  final Random _random = Random();
+  IsarMeetingRepository(this._ref);
+
   Isar get _isar => IsarDatabase.instance.isar;
+
+  String get _currentUserId {
+    final uid = _ref.read(authRepositoryProvider).currentUser?.uid;
+    return uid ?? 'offline_fallback';
+  }
+
+  int _generateUniqueIntId() {
+    return (DateTime.now().microsecondsSinceEpoch + _random.nextInt(1000)) & 0x7FFFFFFFFFFFFFFF;
+  }
 
   @override
   Future<List<MeetingModel>> getAllMeetings() async {
-    return await _isar.meetingModels.where().sortByCreatedAtDesc().findAll();
+    return await _isar.meetingModels
+        .filter()
+        .userIdEqualTo(_currentUserId)
+        .sortByCreatedAtDesc()
+        .findAll();
   }
 
   @override
   Stream<List<MeetingModel>> watchMeetings() {
-    return _isar.meetingModels.where().sortByCreatedAtDesc().watch(fireImmediately: true);
+    return _isar.meetingModels
+        .filter()
+        .userIdEqualTo(_currentUserId)
+        .sortByCreatedAtDesc()
+        .watch(fireImmediately: true);
   }
 
   @override
   Future<MeetingModel?> getMeetingById(int id) async {
     final meeting = await _isar.meetingModels.get(id);
-    if (meeting != null) {
+    if (meeting != null && meeting.userId == _currentUserId) {
       await meeting.transcript.load();
       if (meeting.transcript.value != null) {
         await meeting.transcript.value!.segments.load();
@@ -51,14 +76,15 @@ class IsarMeetingRepository implements MeetingRepository {
       await meeting.actionItems.load();
       await meeting.decisions.load();
       await meeting.chatMessages.load();
+      return meeting;
     }
-    return meeting;
+    return null;
   }
 
   @override
   Stream<MeetingModel?> watchMeetingById(int id) {
     return _isar.meetingModels.watchObject(id, fireImmediately: true).asyncMap((meeting) async {
-      if (meeting != null) {
+      if (meeting != null && meeting.userId == _currentUserId) {
         await meeting.transcript.load();
         if (meeting.transcript.value != null) {
           await meeting.transcript.value!.segments.load();
@@ -67,21 +93,30 @@ class IsarMeetingRepository implements MeetingRepository {
         await meeting.actionItems.load();
         await meeting.decisions.load();
         await meeting.chatMessages.load();
+        return meeting;
       }
-      return meeting;
+      return null;
     });
   }
 
   @override
   Future<MeetingModel> createMeeting(String title) async {
+    final currentUid = _currentUserId;
+    final generatedMeetingId = _generateUniqueIntId();
+    final generatedTranscriptId = _generateUniqueIntId();
+
     final meeting = MeetingModel()
+      ..id = generatedMeetingId
       ..title = title
       ..createdAt = DateTime.now()
       ..durationSeconds = 0.0
       ..isRecording = true
-      ..isSynced = false;
+      ..isSynced = false
+      ..userId = currentUid;
 
-    final transcript = TranscriptModel();
+    final transcript = TranscriptModel()
+      ..id = generatedTranscriptId
+      ..userId = currentUid;
 
     await _isar.writeTxn(() async {
       await _isar.transcriptModels.put(transcript);
@@ -90,20 +125,32 @@ class IsarMeetingRepository implements MeetingRepository {
       await meeting.transcript.save();
     });
 
+    FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((e) {
+      print("[MeetingRepository ERROR] createMeeting Firestore sync failed: $e");
+    });
+
     return meeting;
   }
 
   @override
   Future<void> updateMeeting(MeetingModel meeting) async {
+    if (meeting.userId != _currentUserId) return;
     await _isar.writeTxn(() async {
       await _isar.meetingModels.put(meeting);
+    });
+    FirestoreService.instance.saveMeeting(meeting, _currentUserId).catchError((e) {
+      print("[MeetingRepository ERROR] updateMeeting Firestore sync failed: $e");
     });
   }
 
   @override
   Future<void> deleteMeeting(int id) async {
     final meeting = await getMeetingById(id);
-    if (meeting == null) return;
+    if (meeting == null || meeting.userId != _currentUserId) return;
+
+    FirestoreService.instance.deleteMeeting(id, _currentUserId).catchError((e) {
+      print("[MeetingRepository ERROR] deleteMeeting Firestore sync failed: $e");
+    });
 
     await _isar.writeTxn(() async {
       // Delete segments and transcript
@@ -121,8 +168,12 @@ class IsarMeetingRepository implements MeetingRepository {
       }
 
       // Delete action items, decisions, and chat messages
+      final currentUid = _currentUserId;
       for (final item in meeting.actionItems) {
         await _isar.actionItemModels.delete(item.id);
+        FirestoreService.instance.deleteTask(item.id, currentUid).catchError((e) {
+          print("[MeetingRepository ERROR] deleteTask Firestore sync failed: $e");
+        });
       }
       for (final decision in meeting.decisions) {
         await _isar.decisionModels.delete(decision.id);
@@ -139,14 +190,17 @@ class IsarMeetingRepository implements MeetingRepository {
   @override
   Future<void> addTranscriptSegment(int meetingId, TranscriptSegmentModel segment) async {
     final meeting = await _isar.meetingModels.get(meetingId);
-    if (meeting == null) return;
+    if (meeting == null || meeting.userId != _currentUserId) return;
 
     await meeting.transcript.load();
     final transcript = meeting.transcript.value;
     if (transcript == null) return;
 
+    final currentUid = _currentUserId;
     await _isar.writeTxn(() async {
+      segment.id = _generateUniqueIntId();
       segment.transcript.value = transcript;
+      segment.userId = currentUid;
       await _isar.transcriptSegmentModels.put(segment);
       await segment.transcript.save();
       
@@ -155,6 +209,10 @@ class IsarMeetingRepository implements MeetingRepository {
         meeting.durationSeconds = segment.endTime;
       }
       await _isar.meetingModels.put(meeting);
+    });
+
+    FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((e) {
+      print("[MeetingRepository ERROR] addTranscriptSegment Firestore sync failed: $e");
     });
   }
 
@@ -168,11 +226,12 @@ class IsarMeetingRepository implements MeetingRepository {
     print("[MeetingRepository] saveSummaryAndActionItems started for meeting ID: $meetingId");
     try {
       final meeting = await getMeetingById(meetingId);
-      if (meeting == null) {
-        print("[MeetingRepository ERROR] Meeting not found in database for ID: $meetingId");
+      if (meeting == null || meeting.userId != _currentUserId) {
+        print("[MeetingRepository ERROR] Meeting not found in database or unauthorized for ID: $meetingId");
         return;
       }
 
+      final currentUid = _currentUserId;
       print("[MeetingRepository] Deleting previous summary, action items, and decisions...");
       await _isar.writeTxn(() async {
         // 1. Delete previous summary if exists
@@ -184,6 +243,9 @@ class IsarMeetingRepository implements MeetingRepository {
         final oldActionItems = meeting.actionItems.toList();
         for (final item in oldActionItems) {
           await _isar.actionItemModels.delete(item.id);
+          FirestoreService.instance.deleteTask(item.id, currentUid).catchError((e) {
+            print("[MeetingRepository ERROR] deleteTask Firestore sync failed: $e");
+          });
         }
         meeting.actionItems.clear();
 
@@ -196,13 +258,17 @@ class IsarMeetingRepository implements MeetingRepository {
 
         // 4. Save new summary
         print("[MeetingRepository] Saving new SummaryModel...");
+        summary.id = _generateUniqueIntId();
+        summary.userId = currentUid;
         await _isar.summaryModels.put(summary);
         meeting.summary.value = summary;
 
         // 5. Save new action items
         print("[MeetingRepository] Saving ${actionItems.length} new ActionItemModels...");
         for (final item in actionItems) {
+          item.id = _generateUniqueIntId();
           item.meeting.value = meeting;
+          item.userId = currentUid;
           await _isar.actionItemModels.put(item);
           meeting.actionItems.add(item);
         }
@@ -210,7 +276,9 @@ class IsarMeetingRepository implements MeetingRepository {
         // 6. Save new decisions
         print("[MeetingRepository] Saving ${decisions.length} new DecisionModels...");
         for (final decision in decisions) {
+          decision.id = _generateUniqueIntId();
           decision.meeting.value = meeting;
+          decision.userId = currentUid;
           await _isar.decisionModels.put(decision);
           meeting.decisions.add(decision);
         }
@@ -224,6 +292,10 @@ class IsarMeetingRepository implements MeetingRepository {
         await meeting.actionItems.save();
         await meeting.decisions.save();
       });
+
+      FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((e) {
+        print("[MeetingRepository ERROR] saveSummaryAndActionItems Firestore sync failed: $e");
+      });
       print("[MeetingRepository] saveSummaryAndActionItems completed successfully.");
     } catch (e, stack) {
       print("[MeetingRepository ERROR] saveSummaryAndActionItems failed: $e");
@@ -235,10 +307,13 @@ class IsarMeetingRepository implements MeetingRepository {
   @override
   Future<void> addChatMessage(int meetingId, ChatMessageModel message) async {
     final meeting = await _isar.meetingModels.get(meetingId);
-    if (meeting == null) return;
+    if (meeting == null || meeting.userId != _currentUserId) return;
 
+    final currentUid = _currentUserId;
     await _isar.writeTxn(() async {
+      message.id = _generateUniqueIntId();
       message.meeting.value = meeting;
+      message.userId = currentUid;
       await _isar.chatMessageModels.put(message);
       await message.meeting.save();
     });

@@ -4,10 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/env_config.dart';
 import 'core/theme/app_theme.dart';
 import 'database/isar_database.dart';
-import 'features/auth/auth_provider.dart';
-import 'features/auth/login_screen.dart';
-import 'features/dashboard/dashboard_screen.dart';
+import 'features/auth/splash_screen.dart';
 import 'services/notification_service.dart';
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,11 +38,13 @@ void main() async {
     debugPrint('Background Service error: $e');
   }
 
-  // 4. Initialize Firebase (Gracefully catches failures if config file is not checked in yet)
+  // 4. Initialize Firebase
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   } catch (e) {
-    debugPrint('Firebase not configured. Running in Local Offline Fallback Mode. Error: $e');
+    debugPrint('Firebase not configured. Error: $e');
   }
 
   runApp(
@@ -58,32 +59,11 @@ class MeetingMindApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authStateProvider);
-
     return MaterialApp(
       title: 'MeetingMind AI',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: _getHomeScreen(authState),
+      home: const SplashScreen(),
     );
-  }
-
-  Widget _getHomeScreen(AuthState authState) {
-    switch (authState.status) {
-      case AuthStatus.initial:
-        return const Scaffold(
-          body: Center(
-            child: CircularProgressIndicator(
-              color: AppColors.secondary,
-            ),
-          ),
-        );
-      case AuthStatus.authenticated:
-        return const DashboardScreen();
-      case AuthStatus.loading:
-      case AuthStatus.unauthenticated:
-      case AuthStatus.error:
-        return const LoginScreen();
-    }
   }
 }

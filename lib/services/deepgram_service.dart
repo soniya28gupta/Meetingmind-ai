@@ -16,6 +16,10 @@ class DeepgramService {
   Future<void> connect(String apiKey) async {
     if (_isConnected) return;
 
+    if (apiKey.isEmpty) {
+      throw Exception('Deepgram API Key is empty.');
+    }
+
     _segmentStreamController = StreamController<TranscriptSegmentModel>.broadcast();
 
     // Query parameters for Deepgram streaming: linear16, 16kHz, mono, diarize enabled, model nova-2, smart format, interim results
@@ -37,6 +41,14 @@ class DeepgramService {
         protocols: ['token', apiKey],
       );
 
+      // Verify connection ready state with timeout
+      await _channel!.ready.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException('Connection to Deepgram timed out. Check your internet connection.');
+        },
+      );
+
       _isConnected = true;
 
       _channel!.stream.listen(
@@ -54,6 +66,7 @@ class DeepgramService {
     } catch (e) {
       _isConnected = false;
       _segmentStreamController?.addError(e);
+      await disconnect();
       rethrow;
     }
   }
@@ -61,6 +74,13 @@ class DeepgramService {
   void sendAudioChunk(List<int> chunk) {
     if (!_isConnected || _channel == null) return;
     _channel!.sink.add(chunk);
+  }
+
+  void sendKeepAlive() {
+    if (!_isConnected || _channel == null) return;
+    try {
+      _channel!.sink.add(jsonEncode({"type": "KeepAlive"}));
+    } catch (_) {}
   }
 
   void _handleMessage(dynamic message) {

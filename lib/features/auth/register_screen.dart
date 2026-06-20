@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/premium_text_field.dart';
 import 'auth_provider.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -17,6 +18,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _hideError = false;
 
   @override
   void dispose() {
@@ -28,6 +30,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   void _onRegister() {
     if (_formKey.currentState!.validate()) {
+      setState(() {
+        _hideError = false;
+      });
       ref.read(authStateProvider.notifier).signUpWithEmail(
             _emailController.text.trim(),
             _passwordController.text.trim(),
@@ -41,14 +46,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final authState = ref.watch(authStateProvider);
 
     ref.listen<AuthState>(authStateProvider, (previous, next) {
-      if (next.status == AuthStatus.error && next.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.errorMessage!),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      } else if (next.status == AuthStatus.authenticated) {
+      if (next.status == AuthStatus.authenticated) {
         // Pop back to main shell
         Navigator.of(context).pop();
       }
@@ -56,11 +54,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     final double screenWidth = MediaQuery.of(context).size.width;
     final double screenHeight = MediaQuery.of(context).size.height;
+    
     final bool isShortScreen = screenHeight < 680;
     final bool isNarrowScreen = screenWidth < 360;
+    final bool isTablet = screenWidth >= 600;
 
-    final double spacingTop = isShortScreen ? 20.0 : 32.0;
-    final double spacingFooter = isShortScreen ? 24.0 : 32.0;
+    final double spacingTop = isShortScreen ? 16.0 : 28.0;
+    final double spacingFooter = isShortScreen ? 20.0 : 28.0;
     
     final EdgeInsets cardPadding = isNarrowScreen
         ? const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0)
@@ -79,12 +79,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       body: Stack(
         children: [
           // Background Gradient blobs
+          Container(
+            decoration: const BoxDecoration(
+              gradient: AppColors.darkGradient,
+            ),
+          ),
           Positioned(
             top: -50,
             right: -50,
             child: Container(
-              width: 250,
-              height: 250,
+              width: 260,
+              height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.accent.withValues(alpha: 0.08),
@@ -95,8 +100,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             bottom: -100,
             left: -100,
             child: Container(
-              width: 300,
-              height: 300,
+              width: 320,
+              height: 320,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.primary.withValues(alpha: 0.12),
@@ -107,10 +112,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 400),
+                    constraints: BoxConstraints(
+                      maxWidth: isTablet ? 420 : 380,
+                    ),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -122,7 +130,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: isShortScreen ? 28 : null,
+                                  fontSize: isShortScreen ? 26 : 30,
                                 ),
                           ),
                           const SizedBox(height: 8),
@@ -131,25 +139,82 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                   color: AppColors.textSecondary,
-                                  fontSize: isShortScreen ? 12 : null,
+                                  fontSize: isShortScreen ? 12 : 13,
                                 ),
                           ),
                           SizedBox(height: spacingTop),
+
+                          // Dynamic Inline Error Card
+                          if (authState.status == AuthStatus.error &&
+                              authState.errorMessage != null &&
+                              !_hideError) ...[
+                            TweenAnimationBuilder<double>(
+                              tween: Tween<double>(begin: 0.0, end: 1.0),
+                              duration: const Duration(milliseconds: 300),
+                              builder: (context, value, child) {
+                                return Opacity(
+                                  opacity: value,
+                                  child: Transform.translate(
+                                    offset: Offset(0.0, (1.0 - value) * -10.0),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: GlassCard(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                borderColor: AppColors.error.withValues(alpha: 0.3),
+                                borderWidth: 1.0,
+                                margin: const EdgeInsets.only(bottom: 16),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline_rounded,
+                                      color: AppColors.error,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        authState.errorMessage!,
+                                        style: const TextStyle(
+                                          color: AppColors.error,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close_rounded, size: 16),
+                                      onPressed: () {
+                                        setState(() {
+                                          _hideError = true;
+                                        });
+                                      },
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      visualDensity: VisualDensity.compact,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
 
                           // Registration Form Card
                           GlassCard(
                             opacity: 0.05,
                             padding: cardPadding,
+                            borderColor: Colors.white10,
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 // Name field
-                                TextFormField(
+                                PremiumTextField(
                                   controller: _nameController,
                                   keyboardType: TextInputType.name,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Full Name',
-                                    prefixIcon: Icon(Icons.person_outline_rounded, color: AppColors.textMuted),
-                                  ),
+                                  hintText: 'Full Name',
+                                  prefixIcon: Icons.person_outline_rounded,
                                   validator: (value) {
                                     if (value == null || value.trim().isEmpty) {
                                       return 'Enter your name';
@@ -160,13 +225,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 const SizedBox(height: 16),
                                 
                                 // Email field
-                                TextFormField(
+                                PremiumTextField(
                                   controller: _emailController,
                                   keyboardType: TextInputType.emailAddress,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Email address',
-                                    prefixIcon: Icon(Icons.email_outlined, color: AppColors.textMuted),
-                                  ),
+                                  hintText: 'Email address',
+                                  prefixIcon: Icons.email_outlined,
                                   validator: (value) {
                                     if (value == null || value.isEmpty || !value.contains('@')) {
                                       return 'Enter a valid email';
@@ -177,13 +240,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 const SizedBox(height: 16),
 
                                 // Password field
-                                TextFormField(
+                                PremiumTextField(
                                   controller: _passwordController,
-                                  obscureText: true,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Password (min. 6 chars)',
-                                    prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.textMuted),
-                                  ),
+                                  isPassword: true,
+                                  hintText: 'Password (min. 6 chars)',
+                                  prefixIcon: Icons.lock_outline_rounded,
                                   validator: (value) {
                                     if (value == null || value.length < 6) {
                                       return 'Password must be at least 6 characters';
@@ -196,7 +257,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 // Sign Up Button
                                 GradientButton(
                                   isLoading: authState.status == AuthStatus.loading,
-                                  onPressed: _onRegister,
+                                  onPressed: authState.status == AuthStatus.loading ? null : _onRegister,
                                   child: const Text('Create Account'),
                                 ),
                               ],
@@ -209,14 +270,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text('Already have an account? ', style: TextStyle(color: AppColors.textSecondary)),
+                              const Text('Already have an account? ', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
                               GestureDetector(
-                                onTap: () => Navigator.of(context).pop(),
+                                onTap: authState.status == AuthStatus.loading
+                                    ? null
+                                    : () => Navigator.of(context).pop(),
                                 child: const Text(
                                   'Login',
                                   style: TextStyle(
                                     color: AppColors.secondary,
                                     fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    decoration: TextDecoration.underline,
                                   ),
                                 ),
                               ),

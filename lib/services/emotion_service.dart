@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/schemas/meeting_models.dart';
 import '../features/settings/settings_provider.dart';
 import '../providers/app_providers.dart';
+import 'emotion_health_service.dart';
 
 class EmotionService {
   final Ref? _ref;
@@ -22,6 +23,12 @@ class EmotionService {
 
   Future<String> _findWorkingBackendUrl() async {
     if (_ref != null) {
+      // Use the activeUrl resolved by the EmotionHealthService!
+      final activeUrl = _ref.read(emotionHealthServiceProvider).activeUrl;
+      if (activeUrl.isNotEmpty) {
+        return activeUrl;
+      }
+      
       final ollamaUrl = _ref.read(settingsProvider).ollamaUrl;
       if (ollamaUrl.isNotEmpty) {
         try {
@@ -41,9 +48,28 @@ class EmotionService {
   }
 
   Future<Map<String, dynamic>> detectEmotion() async {
-    final activeUrl = await _findWorkingBackendUrl();
-    final response = await _dio.get('$activeUrl/emotion');
-    return Map<String, dynamic>.from(response.data);
+    print("Emotion request started");
+    try {
+      final activeUrl = await _findWorkingBackendUrl();
+      print("Waiting for response");
+      final response = await _dio.get(
+        '$activeUrl/emotion',
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+        ),
+      );
+      print("Emotion response received");
+      final data = Map<String, dynamic>.from(response.data);
+      print("Emotion parsing completed");
+      return data;
+    } catch (error) {
+      print("Emotion analysis failed");
+      print("Emotion error:");
+      print(error);
+      rethrow;
+    }
   }
 
   /// Send the audio file and its diarized segments to the Flask server for advanced speech intelligence.
@@ -51,27 +77,45 @@ class EmotionService {
     required String audioFilePath,
     required List<TranscriptSegmentModel> segments,
   }) async {
-    final activeUrl = await _findWorkingBackendUrl();
-    print("[EmotionService] Uploading audio to $activeUrl/analyze_audio for DSP processing...");
-    
-    final List<Map<String, dynamic>> segJsonList = segments.map((seg) => {
-      'startTime': seg.startTime,
-      'endTime': seg.endTime,
-      'speaker': seg.speaker ?? 0,
-      'text': seg.text ?? '',
-    }).toList();
+    print("Emotion request started");
+    try {
+      final activeUrl = await _findWorkingBackendUrl();
+      print("[EmotionService] Uploading audio to $activeUrl/analyze_audio for DSP processing...");
+      
+      print("Sending transcript");
+      final List<Map<String, dynamic>> segJsonList = segments.map((seg) => {
+        'startTime': seg.startTime,
+        'endTime': seg.endTime,
+        'speaker': seg.speaker ?? 0,
+        'text': seg.text ?? '',
+      }).toList();
 
-    final formData = FormData.fromMap({
-      'audio': await MultipartFile.fromFile(audioFilePath, filename: 'audio.wav'),
-      'segments': jsonEncode(segJsonList),
-    });
+      final formData = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(audioFilePath, filename: 'audio.wav'),
+        'segments': jsonEncode(segJsonList),
+      });
 
-    final response = await _dio.post(
-      '$activeUrl/analyze_audio',
-      data: formData,
-    );
-    
-    print("[EmotionService] DSP analysis response received.");
-    return Map<String, dynamic>.from(response.data);
+      print("Waiting for response");
+      final response = await _dio.post(
+        '$activeUrl/analyze_audio',
+        data: formData,
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+        ),
+      );
+      
+      print("Emotion response received");
+      print("[EmotionService] DSP analysis response received.");
+      final data = Map<String, dynamic>.from(response.data);
+      print("Emotion parsing completed");
+      return data;
+    } catch (error) {
+      print("Emotion analysis failed");
+      print("Emotion error:");
+      print(error);
+      rethrow;
+    }
   }
 }

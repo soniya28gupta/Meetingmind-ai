@@ -2,6 +2,7 @@ import io
 import json
 import numpy as np
 import scipy.io.wavfile
+import time
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
@@ -80,32 +81,49 @@ def classify_emotion(pitch_vals, rms_vals, zcr_vals, pauses_ratio):
     # Rule classification based on acoustic features
     if mean_pitch > 170 and mean_rms > 0.06:
         if var_pitch > 180:
-            return "Excited", 0.88
-        return "Happy", 0.84
+            res = ("Excited", 0.88)
+        else:
+            res = ("Happy", 0.84)
     elif mean_rms > 0.08:
         if mean_zcr > 0.12:
-            return "Frustrated", 0.78
-        return "Confident", 0.83
+            res = ("Frustrated", 0.78)
+        else:
+            res = ("Confident", 0.83)
     elif mean_rms < 0.015:
         if pauses_ratio > 0.35:
-            return "Bored", 0.72
-        return "Calm", 0.82
+            res = ("Bored", 0.72)
+        else:
+            res = ("Calm", 0.82)
     elif pauses_ratio > 0.4:
-        return "Thinking", 0.75
+        res = ("Thinking", 0.75)
     elif var_pitch > 120:
         if mean_pitch > 150:
-            return "Nervous", 0.74
-        return "Concerned", 0.78
+            res = ("Nervous", 0.74)
+        else:
+            res = ("Concerned", 0.78)
     else:
-        return "Neutral", 0.90
+        res = ("Neutral", 0.90)
+        
+    return res
 
-@app.route('/emotion')
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint."""
+    print("Emotion request received")
+    resp = jsonify({"status": "online"})
+    print("Response sent")
+    return resp
+
+@app.route('/emotion', methods=['GET'])
 def emotion():
     """Fallback basic endpoint."""
-    return jsonify({
+    print("Emotion request received")
+    resp = jsonify({
         "emotion": "Neutral",
         "confidence": 0.92
     })
+    print("Response sent")
+    return resp
 
 @app.route('/analyze_audio', methods=['POST'])
 def analyze_audio():
@@ -115,7 +133,9 @@ def analyze_audio():
       audio: WAV Audio File
       segments: JSON list of segments containing {startTime, endTime, speaker, text}
     """
+    print("Emotion request received")
     if 'audio' not in request.files:
+        print("Backend exception")
         return jsonify({"error": "Missing audio file in request"}), 400
         
     audio_file = request.files['audio']
@@ -123,10 +143,13 @@ def analyze_audio():
     
     try:
         segments = json.loads(segments_json)
+        print("Transcript received")
     except Exception as e:
+        print("Backend exception")
         return jsonify({"error": f"Invalid segments JSON: {str(e)}"}), 400
         
     try:
+        print("Model loaded")
         # Load WAV using scipy
         sr, audio_data = scipy.io.wavfile.read(io.BytesIO(audio_file.read()))
         
@@ -145,6 +168,7 @@ def analyze_audio():
             audio_data = audio_data.astype(np.float32)
             
     except Exception as e:
+        print("Backend exception")
         return jsonify({"error": f"Failed to decode audio WAV file: {str(e)}"}), 500
 
     total_duration = len(audio_data) / float(sr)
@@ -204,6 +228,8 @@ def analyze_audio():
         
         # Segment emotion classification
         seg_emotion, confidence = classify_emotion(pitch_vals, rms_vals, zcr_vals, pauses_ratio)
+        print("Emotion prediction complete")
+        
         segment_emotions_timeline.append({
             "startTime": start_t,
             "endTime": end_t,
@@ -314,6 +340,7 @@ def analyze_audio():
             })
             current_t = next_t
             
+    print("Response sent")
     return jsonify({
         "speakers": speakers_list,
         "segmentEmotions": segment_emotions_timeline,
@@ -322,4 +349,10 @@ def analyze_audio():
     })
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    while True:
+        try:
+            print("Emotion server started")
+            app.run(host="0.0.0.0", port=5000, debug=False)
+        except Exception as e:
+            print("Backend exception")
+            time.sleep(2)

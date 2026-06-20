@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/app_providers.dart';
+import '../../services/firestore_service.dart';
 
 class DashboardData {
   final int totalMeetings;
@@ -72,16 +73,24 @@ class DashboardNotifier extends StateNotifier<DashboardData> {
     int completed = tasks.where((t) => t.isCompleted).length;
     int pending = tasks.length - completed;
 
-    // Weekly activity distribution (last 7 days)
+    // Weekly activity distribution (current calendar week, Mon - Sun)
     List<double> activity = List<double>.filled(7, 0.0);
     final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final endOfWeek = startOfWeek.add(const Duration(days: 7));
+
     for (final meeting in meetings) {
       if (meeting.createdAt != null) {
-        final difference = now.difference(meeting.createdAt!).inDays;
-        if (difference >= 0 && difference < 7) {
-          // Map to index (6 - difference) so that index 6 is today, 5 is yesterday, etc.
-          final index = 6 - difference;
+        final date = meeting.createdAt!.toLocal();
+        if (!date.isBefore(startOfWeek) && date.isBefore(endOfWeek)) {
+          final index = date.weekday - 1; // Mon = 0, Sun = 6
           activity[index] += meeting.durationSeconds / 60.0; // Minutes recorded
+        }
+        
+        // Sync activity log to Firestore
+        final currentUid = _ref.read(authRepositoryProvider).currentUser?.uid;
+        if (currentUid != null) {
+          FirestoreService.instance.saveActivity(date, meeting.durationSeconds, currentUid);
         }
       }
     }

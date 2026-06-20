@@ -368,10 +368,313 @@ $fullTranscript
         'decisions': decisionsList,
       };
     } catch (e, stackTrace) {
-      print("[AI Summary Error] generateMeetingAnalysis failed: $e");
+      print("[AI Summary Error] generateMeetingAnalysis failed: $e. Using local offline fallback.");
       print(stackTrace);
-      rethrow;
+      return _generateMeetingAnalysisFallback(fullTranscript);
     }
+  }
+
+  /// Generates a customized AI insight for wearable biometrics synced to the transcript
+  Future<Map<String, String>> generateBiometricAnalysis({
+    required double heartRateAverage,
+    required double heartRatePeak,
+    required double stressAverage,
+    required String transcript,
+  }) async {
+    try {
+      final activeBaseUrl = await _findWorkingOllamaUrl();
+      final requestData = {
+        'model': _ollamaModel,
+        'prompt': '''
+Based on the following meeting biometrics and transcript, generate short, professional insight summaries (1-2 sentences each) for the user's:
+1. Stress Analysis: How did the user's stress fluctuate? (e.g. "User stress increased during discussion.")
+2. Engagement Analysis: How engaged was the user? (e.g. "Engagement dropped after minute 32.")
+3. Focus Analysis: How focused was the user? (e.g. "Focus remained high during project planning.")
+4. Energy Analysis: What was the energy drain? (e.g. "Heart rate remained stable throughout the meeting.")
+
+Biometrics:
+- Average Heart Rate: $heartRateAverage bpm
+- Peak Heart Rate: $heartRatePeak bpm
+- Average Stress Level: $stressAverage / 100
+
+Transcript:
+$transcript
+
+Return your response ONLY as a JSON block with these keys:
+{
+  "stressAnalysis": "Summary of stress levels during the meeting.",
+  "engagementAnalysis": "Summary of engagement levels.",
+  "focusAnalysis": "Summary of cognitive focus peaks.",
+  "energyAnalysis": "Summary of energy drain and cardiovascular state."
+}
+''',
+        'stream': false,
+      };
+
+      final response = await _postWithRetry('/api/generate', data: requestData);
+      if (response.statusCode == 200) {
+        final content = response.data['response'] as String?;
+        if (content != null && content.isNotEmpty) {
+          final jsonResult = _extractJson(content);
+          return {
+            'stressAnalysis': (jsonResult['stressAnalysis'] ?? '').toString(),
+            'engagementAnalysis': (jsonResult['engagementAnalysis'] ?? '').toString(),
+            'focusAnalysis': (jsonResult['focusAnalysis'] ?? '').toString(),
+            'energyAnalysis': (jsonResult['energyAnalysis'] ?? '').toString(),
+          };
+        }
+      }
+    } catch (_) {}
+
+    return _generateBiometricAnalysisFallback(heartRateAverage, heartRatePeak, stressAverage);
+  }
+
+  Map<String, String> _generateBiometricAnalysisFallback(
+    double heartRateAverage,
+    double heartRatePeak,
+    double stressAverage,
+  ) {
+    String stressText;
+    if (stressAverage > 70) {
+      stressText = 'User stress level was elevated during intense periods of the discussion, peaking alongside key deliverables.';
+    } else if (stressAverage > 45) {
+      stressText = 'Moderate stress response detected. Stress level increased slightly during key presentation turns.';
+    } else {
+      stressText = 'User stress remained stable and in the calm zone throughout the meeting.';
+    }
+
+    String engagementText;
+    if (heartRateAverage > 85) {
+      engagementText = 'Active cardiovascular participation indicates high conversational engagement.';
+    } else {
+      engagementText = 'Circadian metrics indicate relaxed active listening and steady focus levels.';
+    }
+
+    String focusText;
+    if (stressAverage < 40) {
+      focusText = 'Cognitive focus was optimal and calm, showing high capability for decision making.';
+    } else {
+      focusText = 'High heart rate variability indicators suggest high cognitive processing during complex sections.';
+    }
+
+    String energyText = 'Heart rate averaged $heartRateAverage bpm and remained stable throughout the meeting.';
+
+    return {
+      'stressAnalysis': stressText,
+      'engagementAnalysis': engagementText,
+      'focusAnalysis': focusText,
+      'energyAnalysis': energyText,
+    };
+  }
+
+  /// Local offline fallback parser for when Ollama is unreachable.
+  Map<String, dynamic> _generateMeetingAnalysisFallback(String fullTranscript) {
+    print("[OpenAIService] Running local offline fallback analysis parser...");
+
+    final lines = fullTranscript.split('\n');
+    final Map<String, List<String>> speakerSentences = {};
+    final allSentencesWithSpeaker = <Map<String, String>>[];
+    
+    // Split sentences and attribute them to speakers
+    for (final line in lines) {
+      final parts = line.split(':');
+      if (parts.length >= 2) {
+        final speaker = parts[0].trim();
+        final text = parts.sublist(1).join(':').trim();
+        if (text.isNotEmpty) {
+          final sentences = text.split(RegExp(r'(?<=[.!?])\s+'));
+          speakerSentences.putIfAbsent(speaker, () => []);
+          for (final s in sentences) {
+            final cleanedS = s.trim();
+            if (cleanedS.isNotEmpty) {
+              speakerSentences[speaker]!.add(cleanedS);
+              allSentencesWithSpeaker.add({'speaker': speaker, 'text': cleanedS});
+            }
+          }
+        }
+      } else if (line.trim().isNotEmpty) {
+        final cleanedS = line.trim();
+        final sentences = cleanedS.split(RegExp(r'(?<=[.!?])\s+'));
+        for (final s in sentences) {
+          if (s.trim().isNotEmpty) {
+            allSentencesWithSpeaker.add({'speaker': 'Unknown', 'text': s.trim()});
+          }
+        }
+      }
+    }
+
+    // 1. Generate Summary
+    final summaryBuf = StringBuffer();
+    summaryBuf.writeln('📋 Meeting Summary (Offline Fallback)');
+    if (allSentencesWithSpeaker.isEmpty) {
+      summaryBuf.writeln('• No transcript content was captured in this meeting.');
+    } else {
+      summaryBuf.writeln('• A meeting was recorded with ${speakerSentences.keys.length} speaker(s).');
+      int count = 0;
+      for (final item in allSentencesWithSpeaker) {
+        final txt = item['text']!;
+        if (txt.toLowerCase().contains('need to') || txt.toLowerCase().contains('decided') || txt.toLowerCase().contains('agree')) {
+          summaryBuf.writeln('• Highlight: "${item['speaker']}: $txt"');
+          count++;
+          if (count >= 3) break;
+        }
+      }
+      if (count == 0) {
+        final limit = allSentencesWithSpeaker.length < 2 ? allSentencesWithSpeaker.length : 2;
+        for (int i = 0; i < limit; i++) {
+          summaryBuf.writeln('• Discussed: "${allSentencesWithSpeaker[i]['speaker']}: ${allSentencesWithSpeaker[i]['text']}"');
+        }
+      }
+    }
+
+    // 2. Detailed Notes
+    final notesBuf = StringBuffer();
+    int noteCount = 0;
+    for (final item in allSentencesWithSpeaker) {
+      final txt = item['text']!;
+      if (txt.length > 20 && !txt.toLowerCase().startsWith('hello') && !txt.toLowerCase().startsWith('hi') && !txt.toLowerCase().startsWith('ok')) {
+        notesBuf.writeln('• ${item['speaker']}: $txt');
+        noteCount++;
+        if (noteCount >= 10) break;
+      }
+    }
+    if (notesBuf.isEmpty) {
+      notesBuf.writeln('• Discussed general status and updates.');
+    }
+
+    // 3. Speaker Key Takeaways
+    final takeawaysBuf = StringBuffer();
+    for (final entry in speakerSentences.entries) {
+      takeawaysBuf.writeln('👤 ${entry.key}:');
+      int spkTakeawayCount = 0;
+      for (final s in entry.value) {
+        if (s.toLowerCase().contains('think') || s.toLowerCase().contains('want') || s.toLowerCase().contains('will') || s.toLowerCase().contains('need') || s.length > 30) {
+          takeawaysBuf.writeln('  - $s');
+          spkTakeawayCount++;
+          if (spkTakeawayCount >= 3) break;
+        }
+      }
+      if (spkTakeawayCount == 0 && entry.value.isNotEmpty) {
+        takeawaysBuf.writeln('  - Participated in discussions: "${entry.value.first}"');
+      }
+    }
+    if (takeawaysBuf.isEmpty) {
+      takeawaysBuf.writeln('👤 Unknown:\n  - Discussed topics in meeting.');
+    }
+
+    // 4. Risks & Concerns
+    final risksBuf = StringBuffer();
+    final riskKeywords = ['risk', 'worry', 'concern', 'block', 'slow', 'delay', 'issue', 'problem', 'fail', 'difficult', 'error', 'bug', 'prevent'];
+    int riskCount = 0;
+    for (final item in allSentencesWithSpeaker) {
+      final txt = item['text']!;
+      final txtLower = txt.toLowerCase();
+      if (riskKeywords.any((k) => txtLower.contains(k))) {
+        risksBuf.writeln('• ${item['speaker']}: $txt');
+        riskCount++;
+        if (riskCount >= 5) break;
+      }
+    }
+    if (risksBuf.isEmpty) {
+      risksBuf.writeln('• No specific roadblocks or risks were identified.');
+    }
+
+    // 5. Deadlines & Milestones
+    final deadlinesBuf = StringBuffer();
+    final deadlineKeywords = ['deadline', 'by ', 'due', 'tomorrow', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'next week', 'milestone'];
+    int deadlineCount = 0;
+    for (final item in allSentencesWithSpeaker) {
+      final txt = item['text']!;
+      final txtLower = txt.toLowerCase();
+      if (deadlineKeywords.any((k) => txtLower.contains(k))) {
+        deadlinesBuf.writeln('• ${item['speaker']}: $txt');
+        deadlineCount++;
+        if (deadlineCount >= 5) break;
+      }
+    }
+    if (deadlinesBuf.isEmpty) {
+      deadlinesBuf.writeln('• No specific deadlines or milestone dates were mentioned.');
+    }
+
+    final summary = SummaryModel()
+      ..executiveSummary = summaryBuf.toString().trim()
+      ..meetingNotes = notesBuf.toString().trim()
+      ..keyTakeaways = takeawaysBuf.toString().trim()
+      ..risks = risksBuf.toString().trim()
+      ..deadlines = deadlinesBuf.toString().trim();
+
+    // 6. Action Items
+    final actionItemsList = <ActionItemModel>[];
+    final actionKeywords = ['todo', 'need to', 'must', 'should', 'will ', 'task', 'assignee', 'action item'];
+    int taskCount = 0;
+    for (final item in allSentencesWithSpeaker) {
+      final txt = item['text']!;
+      final txtLower = txt.toLowerCase();
+      if (actionKeywords.any((k) => txtLower.contains(k))) {
+        String? assignee;
+        final speaker = item['speaker']!;
+        if (speaker != 'Unknown') {
+          assignee = speaker;
+        }
+        
+        if (txtLower.contains('i will') || txtLower.contains('i need to')) {
+          assignee = speaker;
+        } else {
+          final willMatch = RegExp(r'\b([A-Z][a-z]+)\s+will\b').firstMatch(txt);
+          if (willMatch != null) {
+            assignee = willMatch.group(1);
+          }
+        }
+
+        String deadlineStr = '';
+        for (final k in ['tomorrow', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'next week']) {
+          if (txtLower.contains(k)) {
+            deadlineStr = k;
+            break;
+          }
+        }
+
+        DateTime? deadline;
+        if (deadlineStr.isNotEmpty) {
+          deadline = _parseSmartDeadline(deadlineStr);
+        }
+
+        String priority = 'Medium';
+        if (txtLower.contains('urgent') || txtLower.contains('asap') || txtLower.contains('must') || txtLower.contains('critical')) {
+          priority = 'High';
+        }
+
+        actionItemsList.add(ActionItemModel()
+          ..description = txt
+          ..assignedTo = assignee ?? 'Unassigned'
+          ..deadline = deadline
+          ..priority = priority
+          ..isCompleted = false);
+
+        taskCount++;
+        if (taskCount >= 10) break;
+      }
+    }
+
+    // 7. Key Decisions
+    final decisionsList = <DecisionModel>[];
+    final decisionKeywords = ['decide', 'agree', 'approve', 'confirm', 'resolve', 'settle', 'conclusion'];
+    int decCount = 0;
+    for (final item in allSentencesWithSpeaker) {
+      final txt = item['text']!;
+      final txtLower = txt.toLowerCase();
+      if (decisionKeywords.any((k) => txtLower.contains(k))) {
+        decisionsList.add(DecisionModel()..description = txt);
+        decCount++;
+        if (decCount >= 5) break;
+      }
+    }
+
+    return {
+      'summary': summary,
+      'actionItems': actionItemsList,
+      'decisions': decisionsList,
+    };
   }
 
   /// Parses smart deadline words to concrete dates
@@ -581,6 +884,144 @@ Answer:
         'details': details,
         'models': <String>[],
       };
+    }
+  }
+
+  Map<String, dynamic> _estimateEmotionsKeywordFallback(String fullTranscript, List<int> speakerIndexes) {
+    print("[OpenAIService] Running local keyword-based heuristic emotion estimation...");
+    final List<Map<String, dynamic>> speakerList = [];
+    
+    final keywordMaps = {
+      'happy': ['happy', 'great', 'glad', 'awesome', 'wonderful', 'good', 'pleased', 'cheerful'],
+      'excited': ['excited', 'amazing', 'fantastic', 'love', 'cool', 'super', 'joy', 'eager'],
+      'confident': ['confident', 'sure', 'solve', 'resolved', 'clear', 'execute', 'achieve', 'positive'],
+      'concerned': ['concerned', 'worry', 'anxious', 'afraid', 'risk', 'problem', 'warn', 'careful'],
+      'frustrated': ['frustrated', 'annoy', 'stuck', 'block', 'slow', 'delay', 'issue', 'complaint'],
+      'angry': ['angry', 'mad', 'furious', 'bad', 'worst', 'fail', 'hate', 'dislike'],
+      'bored': ['bored', 'tired', 'slow', 'sleepy', 'dull', 'tedious'],
+      'nervous': ['nervous', 'shaky', 'uncertain', 'tense', 'scared'],
+      'thinking': ['thinking', 'consider', 'ponder', 'maybe', 'perhaps', 'wonder', 'analyze'],
+      'calm': ['calm', 'relax', 'peace', 'quiet', 'smooth', 'stable'],
+    };
+
+    Map<String, dynamic> estimateText(String text) {
+      final textLower = text.toLowerCase();
+      final counts = <String, int>{};
+      for (final entry in keywordMaps.entries) {
+        int count = 0;
+        for (final keyword in entry.value) {
+          final matches = RegExp(RegExp.escape(keyword)).allMatches(textLower).length;
+          count += matches;
+        }
+        if (count > 0) {
+          counts[entry.key] = count;
+        }
+      }
+
+      if (counts.isEmpty) {
+        return {'emotion': 'Neutral', 'confidence': 0.85};
+      }
+
+      final sorted = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+      final primary = sorted.first.key;
+      
+      final emotionFormatted = primary[0].toUpperCase() + primary.substring(1);
+      
+      double confidence = 0.70 + (sorted.first.value * 0.05);
+      if (confidence > 0.95) confidence = 0.95;
+      
+      return {'emotion': emotionFormatted, 'confidence': confidence};
+    }
+
+    final lines = fullTranscript.split('\n');
+    final Map<int, StringBuffer> speakerTexts = {};
+    for (final index in speakerIndexes) {
+      speakerTexts[index] = StringBuffer();
+    }
+
+    for (final line in lines) {
+      final match = RegExp(r'^(?:Speaker\s+|👤\s*Speaker\s+)?(\d+)[\s:]', caseSensitive: false).firstMatch(line);
+      if (match != null) {
+        final spkNum = int.tryParse(match.group(1) ?? '');
+        if (spkNum != null && speakerTexts.containsKey(spkNum)) {
+          speakerTexts[spkNum]!.write('$line ');
+        }
+      }
+    }
+
+    for (final index in speakerIndexes) {
+      final spkText = speakerTexts[index]?.toString().trim() ?? '';
+      final est = estimateText(spkText);
+      speakerList.add({
+        'speakerIndex': index,
+        'emotion': est['emotion'],
+        'confidence': est['confidence'],
+      });
+    }
+
+    final overall = estimateText(fullTranscript);
+
+    return {
+      'overallEmotion': overall['emotion'],
+      'overallConfidence': overall['confidence'],
+      'speakers': speakerList,
+    };
+  }
+
+  Future<Map<String, dynamic>> estimateEmotions({
+    required String fullTranscript,
+    required List<int> speakerIndexes,
+  }) async {
+    try {
+      final activeBaseUrl = await _findWorkingOllamaUrl();
+      print("[OpenAIService] Querying Ollama for local emotion estimation at $activeBaseUrl...");
+      
+      final prompt = '''
+Analyze this meeting transcript and estimate the emotional tone:
+1. For each speaker index in this list: $speakerIndexes, estimate their primary emotion from this list: Happy, Neutral, Confident, Excited, Frustrated, Angry, Sad, Calm. Return a confidence score between 0.0 and 1.0.
+2. Estimate the overall emotion of the meeting from the same list.
+
+Return your response ONLY as a valid JSON block matching this structure:
+{
+  "overallEmotion": "Neutral",
+  "overallConfidence": 0.85,
+  "speakers": [
+    {
+      "speakerIndex": 0,
+      "emotion": "Happy",
+      "confidence": 0.92
+    }
+  ]
+}
+
+Do NOT output any markdown wrappers outside of the JSON block itself. Return ONLY the JSON object.
+
+Transcript:
+$fullTranscript
+''';
+
+      final requestData = {
+        'model': _ollamaModel,
+        'prompt': prompt,
+        'stream': false,
+      };
+
+      final response = await _postWithRetry(
+        '/api/generate',
+        data: requestData,
+      );
+
+      if (response.statusCode == 200) {
+        final content = response.data['response'] as String?;
+        if (content != null && content.isNotEmpty) {
+          final jsonResult = _extractJson(content);
+          return jsonResult;
+        }
+      }
+      throw Exception("Invalid response from Ollama");
+    } catch (e) {
+      print("[OpenAIService] Ollama emotion estimation failed, falling back to local heuristic: $e");
+      return _estimateEmotionsKeywordFallback(fullTranscript, speakerIndexes);
     }
   }
 }

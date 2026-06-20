@@ -3,13 +3,22 @@ import 'package:isar/isar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/isar_database.dart';
 import '../database/schemas/meeting_models.dart';
+import '../providers/app_providers.dart';
 
 final speakerServiceProvider = Provider<SpeakerService>((ref) {
-  return SpeakerService();
+  return SpeakerService(ref);
 });
 
 class SpeakerService {
+  final Ref _ref;
+  SpeakerService(this._ref);
+
   Isar get _isar => IsarDatabase.instance.isar;
+
+  String get _currentUserId {
+    final uid = _ref.read(authRepositoryProvider).currentUser?.uid;
+    return uid ?? 'offline_fallback';
+  }
 
   static const List<int> _defaultColors = [
     0xFF9C27B0, // Deep Purple
@@ -46,7 +55,8 @@ class SpeakerService {
     required List<double> voiceEmbedding,
     required String defaultName,
   }) async {
-    final allProfiles = await _isar.speakerProfileModels.where().findAll();
+    final uid = _currentUserId;
+    final allProfiles = await _isar.speakerProfileModels.filter().userIdEqualTo(uid).findAll();
     
     SpeakerProfileModel? bestMatch;
     double bestScore = 0.0;
@@ -82,7 +92,8 @@ class SpeakerService {
       ..colorValue = randomColor
       ..voiceEmbedding = voiceEmbedding
       ..meetingCount = 1
-      ..createdAt = DateTime.now();
+      ..createdAt = DateTime.now()
+      ..userId = uid;
       
     await _isar.writeTxn(() async {
       await _isar.speakerProfileModels.put(newProfile);
@@ -94,12 +105,13 @@ class SpeakerService {
 
   /// Get or create a speaker profile by name fallback (if DSP offline).
   Future<SpeakerProfileModel> getOrCreateSpeakerProfileByName(String name) async {
-    var profile = await _isar.speakerProfileModels.where().nameEqualTo(name).findFirst();
+    final uid = _currentUserId;
+    var profile = await _isar.speakerProfileModels.filter().userIdEqualTo(uid).nameEqualTo(name).findFirst();
     if (profile != null) {
       return profile;
     }
     
-    final allProfiles = await _isar.speakerProfileModels.where().findAll();
+    final allProfiles = await _isar.speakerProfileModels.filter().userIdEqualTo(uid).findAll();
     final index = allProfiles.length;
     final randomEmoji = _defaultEmojis[index % _defaultEmojis.length];
     final randomColor = _defaultColors[index % _defaultColors.length];
@@ -109,7 +121,8 @@ class SpeakerService {
       ..avatarEmoji = randomEmoji
       ..colorValue = randomColor
       ..meetingCount = 1
-      ..createdAt = DateTime.now();
+      ..createdAt = DateTime.now()
+      ..userId = uid;
       
     await _isar.writeTxn(() async {
       await _isar.speakerProfileModels.put(profile!);
@@ -119,6 +132,7 @@ class SpeakerService {
 
   /// Update an existing speaker profile.
   Future<void> updateSpeakerProfile(SpeakerProfileModel profile) async {
+    if (profile.userId != _currentUserId) return;
     await _isar.writeTxn(() async {
       await _isar.speakerProfileModels.put(profile);
     });
@@ -126,6 +140,6 @@ class SpeakerService {
 
   /// Fetch all speaker profiles.
   Future<List<SpeakerProfileModel>> getAllSpeakerProfiles() async {
-    return await _isar.speakerProfileModels.where().findAll();
+    return await _isar.speakerProfileModels.filter().userIdEqualTo(_currentUserId).findAll();
   }
 }

@@ -5,15 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:isar/isar.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/pdf_helper.dart';
 import '../../database/isar_database.dart';
 import '../../database/schemas/meeting_models.dart';
 import '../../widgets/glass_card.dart';
+import '../../providers/app_providers.dart';
 import '../meetings/meetings_provider.dart';
 import '../meetings/meeting_details_screen.dart';
 import '../recording/recording_dialog.dart';
 import '../recording/recording_provider.dart';
 import '../settings/settings_screen.dart';
+import '../settings/profile_screen.dart';
 import 'dashboard_provider.dart';
+import '../auth/auth_provider.dart';
+import '../wearable/wearable_dashboard.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -24,6 +29,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _isDialogOpened = false;
+  int _currentIndex = 0;
 
   void _showRecordingDialog(BuildContext context) {
     if (_isDialogOpened) return;
@@ -48,6 +54,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final meetingsAsync = ref.watch(meetingsListStreamProvider);
     final recordingState = ref.watch(recordingProvider);
     final emotionTest = ref.watch(emotionTestProvider);
+    final user = ref.watch(authStateProvider).user;
 
     ref.listen<RecordingState>(recordingProvider, (previous, next) {
       if (previous?.status != next.status) {
@@ -101,69 +108,78 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
 
           SafeArea(
-            child: RefreshIndicator(
-              onRefresh: () async {
-                // Auto calculation refreshes automatically, but we can trigger invalidations
-                ref.invalidate(meetingsListStreamProvider);
-              },
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Header Bar
-                    _buildHeader(context),
-                    const SizedBox(height: 24),
-                    _buildTestEmotionSection(context, emotionTest),
-                    const SizedBox(height: 24),
-                    // Metrics Cards Grid
-                    _buildMetricsGrid(context, stats),
-                    const SizedBox(height: 24),
-
-                    // Weekly Activity Chart
-                    _buildActivityChart(context, stats),
-                    const SizedBox(height: 24),
-
-                    // Speaker Leaderboard
-                    _buildSpeakerLeaderboard(context),
-                    const SizedBox(height: 24),
-
-                    // Mood Distribution
-                    _buildMoodDistributionChart(context),
-                    const SizedBox(height: 24),
-
-                    // Task Ownership distribution
-                    _buildTaskOwnershipChart(context),
-                    const SizedBox(height: 24),
-
-                    // AI Insights card
-                    _buildAiInsightsCard(context, stats),
-                    const SizedBox(height: 28),
-
-                    // Recent Meetings Header
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Recent Meetings',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        if (meetingsAsync.value?.isNotEmpty ?? false)
-                          Text(
-                            '${meetingsAsync.value!.length} total',
-                            style: const TextStyle(color: AppColors.textSecondary),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Recent Meetings List
-                    _buildMeetingsList(context, meetingsAsync),
-                    const SizedBox(height: 80), // Padding to avoid FAB block
-                  ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header Bar (always visible)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+                  child: _buildHeader(context, user),
                 ),
-              ),
+                // Premium sliding tab switcher
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                  child: _buildTabSwitcher(),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: [
+                      // TAB 0: Meetings/Assistant
+                      RefreshIndicator(
+                        onRefresh: () async {
+                          ref.invalidate(meetingsListStreamProvider);
+                        },
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildTestEmotionSection(context, emotionTest),
+                              const SizedBox(height: 24),
+                              _buildMetricsGrid(context, stats),
+                              const SizedBox(height: 24),
+                              _buildActivityChart(context, stats),
+                              const SizedBox(height: 24),
+                              _buildSpeakerLeaderboard(context),
+                              const SizedBox(height: 24),
+                              _buildMoodDistributionChart(context),
+                              const SizedBox(height: 24),
+                              _buildEmotionTrends(context),
+                              const SizedBox(height: 24),
+                              _buildTaskOwnershipChart(context),
+                              const SizedBox(height: 24),
+                              _buildAiInsightsCard(context, stats),
+                              const SizedBox(height: 28),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Recent Meetings',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  if (meetingsAsync.value?.isNotEmpty ?? false)
+                                    Text(
+                                      '${meetingsAsync.value!.length} total',
+                                      style: const TextStyle(color: AppColors.textSecondary),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              _buildMeetingsList(context, meetingsAsync),
+                              const SizedBox(height: 80),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // TAB 1: Wearable Wellness Dashboard
+                      const WearableDashboard(),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -217,9 +233,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(27),
                   onTap: () {
-                    final isRecording = recordingState.status == RecordingStatus.recording ||
-                                        recordingState.status == RecordingStatus.paused ||
-                                        recordingState.status == RecordingStatus.finalizing;
+                    final isRecording = recordingState.status != RecordingStatus.idle &&
+                                        recordingState.status != RecordingStatus.error &&
+                                        recordingState.status != RecordingStatus.completed;
                     if (isRecording) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -262,29 +278,70 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, UserModel? user) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'MeetingMind AI',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
+        Expanded(
+          child: Row(
+            children: [
+              if (user != null) ...[
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.secondary.withValues(alpha: 0.5), width: 1.5),
+                    ),
+                    child: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: AppColors.surface,
+                      backgroundImage: user.photoUrl != null && user.photoUrl!.isNotEmpty
+                          ? NetworkImage(user.photoUrl!)
+                          : null,
+                      child: user.photoUrl == null || user.photoUrl!.isEmpty
+                          ? Text(
+                              (user.displayName ?? 'U')[0].toUpperCase(),
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
+                            )
+                          : null,
+                    ),
                   ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Your meeting summaries and action items',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-          ],
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user != null ? '👋 Welcome Back, ${user.displayName ?? "User"}' : 'MeetingMind AI',
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                            letterSpacing: 0.5,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      user != null ? (user.email ?? 'Your summary details') : 'Your summaries & action items',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+        const SizedBox(width: 8),
         IconButton(
-          icon: const Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 28),
+          icon: const Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 26),
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -295,7 +352,145 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  Widget _buildTabSwitcher() {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.surfaceLight),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _currentIndex = 0),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: _currentIndex == 0 ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: _currentIndex == 0 ? Colors.white : AppColors.textSecondary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Meeting Intelligence',
+                      style: TextStyle(
+                        color: _currentIndex == 0 ? Colors.white : AppColors.textSecondary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _currentIndex = 1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: _currentIndex == 1 ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.favorite_border_rounded,
+                      color: _currentIndex == 1 ? Colors.white : AppColors.textSecondary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Wearable Wellness',
+                      style: TextStyle(
+                        color: _currentIndex == 1 ? Colors.white : AppColors.textSecondary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCardSkeleton() {
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 60,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ),
+          Container(
+            width: 40,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMetricsGrid(BuildContext context, DashboardData stats) {
+    if (stats.isLoading) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final crossCount = constraints.maxWidth > 600 ? 4 : 2;
+          return GridView.count(
+            crossAxisCount: crossCount,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.4,
+            children: List.generate(4, (index) => _buildStatCardSkeleton()),
+          );
+        },
+      );
+    }
+
     final double hours = stats.totalRecordingHours;
     final String hoursStr = hours >= 1.0 ? '${hours.toStringAsFixed(1)}h' : '${(hours * 60).toStringAsFixed(0)}m';
 
@@ -378,6 +573,42 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildActivityChart(BuildContext context, DashboardData stats) {
     final activity = stats.weeklyActivity;
+    final isAllZero = activity.every((val) => val == 0);
+
+    if (isAllZero) {
+      return GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.bar_chart_rounded, color: AppColors.secondary, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Weekly Activity (Minutes)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.bar_chart_outlined, color: AppColors.secondary.withValues(alpha: 0.6), size: 36),
+                    const SizedBox(height: 8),
+                    const Text('No Activity Registered', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    const Text('Record or upload a meeting to see your weekly stats here.', style: TextStyle(color: AppColors.textMuted, fontSize: 11), textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return GlassCard(
       child: Column(
@@ -488,6 +719,103 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  void _showRenameDialog(BuildContext context, MeetingModel meeting) {
+    final controller = TextEditingController(text: meeting.title);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text('Rename Meeting'),
+          content: TextField(
+            controller: controller,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'Meeting Title',
+              labelStyle: TextStyle(color: AppColors.textSecondary),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.textSecondary),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.primary),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newTitle = controller.text.trim();
+                if (newTitle.isNotEmpty) {
+                  meeting.title = newTitle;
+                  await ref.read(meetingRepositoryProvider).updateMeeting(meeting);
+                  if (context.mounted) Navigator.of(context).pop();
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showDeleteConfirmationDialog(BuildContext context, MeetingModel meeting) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppColors.surfaceLight),
+          ),
+          title: const Text('Delete Meeting'),
+          content: Text('Are you sure you want to delete "${meeting.title ?? 'Untitled Meeting'}"? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                try {
+                  await ref.read(meetingRepositoryProvider).deleteMeeting(meeting.id);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Meeting deleted successfully'),
+                        backgroundColor: AppColors.error,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to delete meeting: $e'),
+                        backgroundColor: AppColors.error,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildMeetingsList(BuildContext context, AsyncValue<List<MeetingModel>> meetingsAsync) {
     return meetingsAsync.when(
       data: (meetings) {
@@ -550,7 +878,81 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ],
                   ),
                 ),
-                trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 16),
+                trailing: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: AppColors.textMuted),
+                  onSelected: (value) async {
+                    if (value == 'open') {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MeetingDetailsScreen(meetingId: meeting.id),
+                        ),
+                      );
+                    } else if (value == 'rename') {
+                      _showRenameDialog(context, meeting);
+                    } else if (value == 'delete') {
+                      _showDeleteConfirmationDialog(context, meeting);
+                    } else if (value == 'share') {
+                      // Trigger loading indicator or call directly
+                      await ExportHelper.shareMeetingText(meeting);
+                    } else if (value == 'export_pdf') {
+                      // Trigger loading indicator or call directly
+                      await ExportHelper.shareMeetingPdf(meeting);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'open',
+                      child: Row(
+                        children: [
+                          Icon(Icons.folder_open, size: 18),
+                          SizedBox(width: 8),
+                          Text('Open'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'rename',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Rename'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'share',
+                      child: Row(
+                        children: [
+                          Icon(Icons.share_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Share Text'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'export_pdf',
+                      child: Row(
+                        children: [
+                          Icon(Icons.picture_as_pdf_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Export PDF'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline, color: AppColors.error, size: 18),
+                          SizedBox(width: 8),
+                          Text('Delete', style: TextStyle(color: AppColors.error)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -724,9 +1126,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildSpeakerLeaderboard(BuildContext context) {
+    final currentUserId = ref.watch(authStateProvider).user?.uid ?? 'offline_fallback';
     final isar = IsarDatabase.instance.isar;
-    final speakerProfiles = isar.speakerProfileModels.where().findAllSync();
-    final allAnalytics = isar.speakerAnalyticsModels.where().findAllSync();
+    final speakerProfiles = isar.speakerProfileModels.filter().userIdEqualTo(currentUserId).findAllSync();
+    final allAnalytics = isar.speakerAnalyticsModels.filter().userIdEqualTo(currentUserId).findAllSync();
     for (final a in allAnalytics) {
       a.speakerProfile.loadSync();
     }
@@ -747,7 +1150,38 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       });
       
     if (sortedProfiles.isEmpty) {
-      return const SizedBox();
+      return GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.leaderboard_rounded, color: AppColors.secondary, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Speaker Leaderboard',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.leaderboard_outlined, color: AppColors.secondary.withValues(alpha: 0.6), size: 36),
+                    const SizedBox(height: 8),
+                    const Text('No Speaker Data Available', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    const Text('Record a meeting to auto-calculate speaker contributions.', style: TextStyle(color: AppColors.textMuted, fontSize: 11), textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
     
     return GlassCard(
@@ -801,8 +1235,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildMoodDistributionChart(BuildContext context) {
+    final currentUserId = ref.watch(authStateProvider).user?.uid ?? 'offline_fallback';
     final isar = IsarDatabase.instance.isar;
-    final allEmotions = isar.speakerEmotionModels.where().findAllSync();
+    final allEmotions = isar.speakerEmotionModels.filter().userIdEqualTo(currentUserId).findAllSync();
     
     final Map<String, int> moodCounts = {};
     for (final se in allEmotions) {
@@ -812,7 +1247,38 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
     
     if (moodCounts.isEmpty) {
-      return const SizedBox();
+      return GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.face_rounded, color: AppColors.secondary, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Mood Distribution',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.sentiment_satisfied_alt_rounded, color: AppColors.secondary.withValues(alpha: 0.6), size: 36),
+                    const SizedBox(height: 8),
+                    const Text('No Mood Data Available', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    const Text('Emotion insights populate automatically after audio transcription.', style: TextStyle(color: AppColors.textMuted, fontSize: 11), textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
     
     final totalCount = moodCounts.values.fold<int>(0, (sum, val) => sum + val);
@@ -917,9 +1383,64 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildTaskOwnershipChart(BuildContext context) {
+  Widget _buildEmotionTrends(BuildContext context) {
+    final currentUserId = ref.watch(authStateProvider).user?.uid ?? 'offline_fallback';
     final isar = IsarDatabase.instance.isar;
-    final allTasks = isar.actionItemModels.where().findAllSync();
+    final lastMeetings = isar.meetingModels
+        .filter()
+        .userIdEqualTo(currentUserId)
+        .sortByCreatedAtDesc()
+        .limit(5)
+        .findAllSync();
+
+    if (lastMeetings.isEmpty) return const SizedBox();
+
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.trending_up_rounded, color: AppColors.secondary, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Emotion Trends (Last 5 Meetings)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 60,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: lastMeetings.map((m) {
+                final emotion = m.detectedEmotion ?? 'Neutral';
+                final dateStr = m.createdAt != null ? DateFormat('MM/dd').format(m.createdAt!) : '';
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: getEmotionColor(emotion).withValues(alpha: 0.15),
+                      child: Text(getEmotionEmoji(emotion), style: const TextStyle(fontSize: 16)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(dateStr, style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                  ],
+                );
+              }).toList().reversed.toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskOwnershipChart(BuildContext context) {
+    final currentUserId = ref.watch(authStateProvider).user?.uid ?? 'offline_fallback';
+    final isar = IsarDatabase.instance.isar;
+    final allTasks = isar.actionItemModels.filter().userIdEqualTo(currentUserId).findAllSync();
     for (final t in allTasks) {
       t.speakerProfile.loadSync();
     }
@@ -936,7 +1457,38 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
     
     if (tasksPerSpeaker.isEmpty) {
-      return const SizedBox();
+      return GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.task_alt_rounded, color: AppColors.secondary, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Task Ownership Distribution',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.assignment_ind_outlined, color: AppColors.secondary.withValues(alpha: 0.6), size: 36),
+                    const SizedBox(height: 8),
+                    const Text('No Task Ownership Data', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    const Text('Action items will be mapped to speakers as they are assigned.', style: TextStyle(color: AppColors.textMuted, fontSize: 11), textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
     
     final sortedSpeakerTasks = tasksPerSpeaker.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
