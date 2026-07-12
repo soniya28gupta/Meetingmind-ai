@@ -52,10 +52,12 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
   final List<int> _retryIntervals = [2, 5, 10, 20, 30];
 
   OllamaConnectionManager(this._ref)
-      : super(OllamaConnectionState(
+    : super(
+        OllamaConnectionState(
           status: OllamaConnectionStatus.offline,
           activeUrl: '',
-        )) {
+        ),
+      ) {
     // Start keeping connection alive automatically
     _startMonitoring();
   }
@@ -131,14 +133,17 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
           return;
         }
 
-        final hasModel = models.any((m) => m == targetModel || m.startsWith('$targetModel:'));
+        final hasModel = models.any(
+          (m) => m == targetModel || m.startsWith('$targetModel:'),
+        );
         if (!hasModel) {
           state = state.copyWith(
             status: OllamaConnectionStatus.waitingForOllama,
             activeUrl: targetUrl,
             responseTimeMs: latency,
             activeModel: models.join(', '),
-            errorMessage: "Model '$targetModel' missing. Loaded: ${models.join(', ')}",
+            errorMessage:
+                "Model '$targetModel' missing. Loaded: ${models.join(', ')}",
           );
           _handleFailure("Model '$targetModel' not loaded on Ollama.");
           return;
@@ -166,7 +171,9 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
     if (_inRetryLoop) return;
     _inRetryLoop = true;
 
-    print("[OllamaConnectionManager] Connection failure detected. Starting auto-reconnect strategy...");
+    print(
+      "[OllamaConnectionManager] Connection failure detected. Starting auto-reconnect strategy...",
+    );
     state = state.copyWith(
       status: OllamaConnectionStatus.reconnecting,
       errorMessage: error,
@@ -174,14 +181,18 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
 
     for (int i = 0; i < _retryIntervals.length; i++) {
       final delay = _retryIntervals[i];
-      print("[OllamaConnectionManager] Retrying in $delay seconds (attempt ${i + 1}/${_retryIntervals.length})...");
+      print(
+        "[OllamaConnectionManager] Retrying in $delay seconds (attempt ${i + 1}/${_retryIntervals.length})...",
+      );
       await Future.delayed(Duration(seconds: delay));
 
       // Attempt dynamic discovery to handle environment/IP modifications
       final discoveredHost = await discoverPCNetworkIP();
       if (discoveredHost != null) {
         final newUrl = 'http://$discoveredHost:11434';
-        print("[OllamaConnectionManager] Found working host: $newUrl. Updating settings...");
+        print(
+          "[OllamaConnectionManager] Found working host: $newUrl. Updating settings...",
+        );
         await _ref.read(settingsProvider.notifier).saveOllamaUrl(newUrl);
       }
 
@@ -205,7 +216,10 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
             }
           }
 
-          if (models.isNotEmpty && models.any((m) => m == targetModel || m.startsWith('$targetModel:'))) {
+          if (models.isNotEmpty &&
+              models.any(
+                (m) => m == targetModel || m.startsWith('$targetModel:'),
+              )) {
             // Recovered connection!
             _inRetryLoop = false;
             state = OllamaConnectionState(
@@ -214,7 +228,9 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
               responseTimeMs: latency,
               activeModel: targetModel,
             );
-            print("[OllamaConnectionManager] Reconnection established successfully!");
+            print(
+              "[OllamaConnectionManager] Reconnection established successfully!",
+            );
             return;
           } else if (models.isEmpty) {
             state = state.copyWith(
@@ -224,7 +240,8 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
           } else {
             state = state.copyWith(
               status: OllamaConnectionStatus.waitingForOllama,
-              errorMessage: "Ollama starting... Model '$targetModel' not loaded.",
+              errorMessage:
+                  "Ollama starting... Model '$targetModel' not loaded.",
             );
           }
         }
@@ -236,14 +253,16 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
       status: OllamaConnectionStatus.offline,
       errorMessage: error,
     );
-    print("[OllamaConnectionManager] All auto-reconnect attempts failed. State set to Offline.");
+    print(
+      "[OllamaConnectionManager] All auto-reconnect attempts failed. State set to Offline.",
+    );
   }
 
   /// Dynamic parallel subnet and loopback probing to locate the Ollama host
   Future<String?> discoverPCNetworkIP() async {
     try {
       final List<String> candidates = [];
-      
+
       // Probing loopbacks dynamically:
       candidates.add(InternetAddress.loopbackIPv4.address);
       candidates.add(['10', '0', '2', '2'].join('.'));
@@ -260,12 +279,12 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
           final parts = ip.split('.');
           if (parts.length == 4) {
             final prefix = '${parts[0]}.${parts[1]}.${parts[2]}.';
-            
+
             // Prioritize common gateways
             candidates.add('${prefix}1');
             candidates.add('${prefix}2');
             candidates.add('${prefix}254');
-            
+
             // Add other devices in the subnet range
             for (int i = 1; i < 255; i++) {
               final val = '$prefix$i';
@@ -277,25 +296,29 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
         }
       }
 
-      print("[OllamaConnectionManager] Parallel probing ${candidates.length} connection candidates on port 11434...");
+      print(
+        "[OllamaConnectionManager] Parallel probing ${candidates.length} connection candidates on port 11434...",
+      );
 
       // Probe in batches of 40 to maintain speed and minimize resource usage
       const batchSize = 40;
       for (int i = 0; i < candidates.length; i += batchSize) {
         final batch = candidates.skip(i).take(batchSize);
-        final results = await Future.wait(batch.map((ip) async {
-          try {
-            final socket = await Socket.connect(
-              ip,
-              11434,
-              timeout: const Duration(milliseconds: 150),
-            );
-            socket.destroy();
-            return ip;
-          } catch (_) {
-            return null;
-          }
-        }));
+        final results = await Future.wait(
+          batch.map((ip) async {
+            try {
+              final socket = await Socket.connect(
+                ip,
+                11434,
+                timeout: const Duration(milliseconds: 150),
+              );
+              socket.destroy();
+              return ip;
+            } catch (_) {
+              return null;
+            }
+          }),
+        );
 
         for (final res in results) {
           if (res != null) {
@@ -311,7 +334,10 @@ class OllamaConnectionManager extends StateNotifier<OllamaConnectionState> {
   }
 }
 
-final ollamaConnectionManagerProvider = StateNotifierProvider<OllamaConnectionManager, OllamaConnectionState>((ref) {
-  ref.watch(settingsProvider);
-  return OllamaConnectionManager(ref);
-});
+final ollamaConnectionManagerProvider =
+    StateNotifierProvider<OllamaConnectionManager, OllamaConnectionState>((
+      ref,
+    ) {
+      ref.watch(settingsProvider);
+      return OllamaConnectionManager(ref);
+    });

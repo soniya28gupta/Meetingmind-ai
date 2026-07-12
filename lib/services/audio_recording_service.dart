@@ -1,22 +1,24 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import '../core/utils/audio_helper.dart';
 
 class AudioRecordingService {
   final AudioRecorder _recorder = AudioRecorder();
-  
+
   bool _isRecording = false;
   bool _isPaused = false;
   int _secondsElapsed = 0;
   Timer? _timer;
-  
+
   String? _tempPcmPath;
   String? _finalWavPath;
   IOSink? _fileSink;
-  
+
   StreamController<List<int>>? _audioStreamController;
+  StreamController<double>? _volumeStreamController;
   StreamSubscription<List<int>>? _recorderSubscription;
 
   bool get isRecording => _isRecording;
@@ -25,7 +27,12 @@ class AudioRecordingService {
   String? get finalWavPath => _finalWavPath;
 
   // Streams PCM bytes for real-time transcription
-  Stream<List<int>> get audioStream => _audioStreamController?.stream ?? const Stream.empty();
+  Stream<List<int>> get audioStream =>
+      _audioStreamController?.stream ?? const Stream.empty();
+
+  // Streams live volume levels [0.0, 1.0] for UI visualizations
+  Stream<double> get volumeStream =>
+      _volumeStreamController?.stream ?? const Stream.empty();
 
   Future<bool> hasPermission() async {
     return await _recorder.hasPermission();
@@ -41,14 +48,15 @@ class AudioRecordingService {
     final tempDir = await getTemporaryDirectory();
     final docDir = await getApplicationDocumentsDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    
+
     _tempPcmPath = '${tempDir.path}/rec_$timestamp.raw';
     _finalWavPath = '${docDir.path}/meeting_$timestamp.wav';
-    
+
     final pcmFile = File(_tempPcmPath!);
     _fileSink = pcmFile.openWrite();
 
     _audioStreamController = StreamController<List<int>>.broadcast();
+    _volumeStreamController = StreamController<double>.broadcast();
 
     // Configure recorder for PCM 16-bit, 16kHz, mono (ideal for Deepgram)
     const config = RecordConfig(
@@ -71,6 +79,9 @@ class AudioRecordingService {
           _fileSink?.add(chunk);
           // Pipe bytes to the audio stream controller for WebSocket streaming
           _audioStreamController?.add(chunk);
+          // Calculate and broadcast live volume level
+          final volume = _calculateRmsVolume(chunk);
+          _volumeStreamController?.add(volume);
         }
       },
       onError: (err) {
@@ -106,10 +117,10 @@ class AudioRecordingService {
 
     _timer?.cancel();
     _timer = null;
-    
+
     await _recorderSubscription?.cancel();
     _recorderSubscription = null;
-    
+
     try {
       await _recorder.stop();
     } catch (e) {
@@ -117,9 +128,12 @@ class AudioRecordingService {
     }
     await _fileSink?.close();
     _fileSink = null;
-    
+
     await _audioStreamController?.close();
     _audioStreamController = null;
+
+    await _volumeStreamController?.close();
+    _volumeStreamController = null;
 
     _isRecording = false;
     _isPaused = false;
@@ -129,7 +143,7 @@ class AudioRecordingService {
       await AudioHelper.convertPcmToWav(_tempPcmPath!, _finalWavPath!, 16000);
       return _finalWavPath;
     }
-    
+
     return null;
   }
 
@@ -137,6 +151,32 @@ class AudioRecordingService {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _secondsElapsed++;
     });
+  }
+
+  double _calculateRmsVolume(List<int> chunk) {
+    if (chunk.isEmpty) return 0.0;
+
+    int numSamples = chunk.length ~/ 2;
+    if (numSamples == 0) return 0.0;
+
+    double sumOfSquares = 0.0;
+    for (int i = 0; i < chunk.length - 1; i += 2) {
+      int low = chunk[i];
+      int high = chunk[i + 1];
+      int sample = (high << 8) | low;
+
+      if (sample >= 32768) {
+        sample = sample - 65536;
+      }
+
+      sumOfSquares += sample * sample;
+    }
+
+    double rms = math.sqrt(sumOfSquares / numSamples);
+    double normalized = rms / 32768.0;
+    if (normalized > 1.0) normalized = 1.0;
+
+    return normalized;
   }
 
   void dispose() {

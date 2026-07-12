@@ -8,12 +8,18 @@ final meetingsListStreamProvider = StreamProvider<List<MeetingModel>>((ref) {
 });
 
 // Future of a single meeting by its ID
-final meetingDetailsFutureProvider = FutureProvider.family<MeetingModel?, int>((ref, id) async {
+final meetingDetailsFutureProvider = FutureProvider.family<MeetingModel?, int>((
+  ref,
+  id,
+) async {
   return await ref.watch(meetingRepositoryProvider).getMeetingById(id);
 });
 
 // Stream of a single meeting by its ID (allows real-time live UI updates)
-final meetingDetailsStreamProvider = StreamProvider.family<MeetingModel?, int>((ref, id) {
+final meetingDetailsStreamProvider = StreamProvider.family<MeetingModel?, int>((
+  ref,
+  id,
+) {
   return ref.watch(meetingRepositoryProvider).watchMeetingById(id);
 });
 
@@ -33,6 +39,7 @@ class MeetingsController extends StateNotifier<AsyncValue<void>> {
   }
 }
 
-final meetingsControllerProvider = StateNotifierProvider<MeetingsController, AsyncValue<void>>((ref) {
-  return MeetingsController(ref);
-});
+final meetingsControllerProvider =
+    StateNotifierProvider<MeetingsController, AsyncValue<void>>((ref) {
+      return MeetingsController(ref);
+    });

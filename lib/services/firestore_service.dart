@@ -11,17 +11,16 @@ class FirestoreService {
   // --- USER PROFILE ---
   Future<void> saveUserProfile(String uid, Map<String, dynamic> data) async {
     try {
-      await _db.collection('users').doc(uid).set(
-        data,
-        SetOptions(merge: true),
-      );
+      await _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
       debugPrint('[FirestoreService] Saved user profile for $uid');
     } catch (e) {
       debugPrint('[FirestoreService ERROR] saveUserProfile failed: $e');
     }
   }
 
-  Future<DocumentSnapshot<Map<String, dynamic>>?> getUserProfile(String uid) async {
+  Future<DocumentSnapshot<Map<String, dynamic>>?> getUserProfile(
+    String uid,
+  ) async {
     try {
       final doc = await _db.collection('users').doc(uid).get();
       return doc;
@@ -34,8 +33,10 @@ class FirestoreService {
   // --- MEETINGS ---
   Future<void> saveMeeting(MeetingModel meeting, String userId) async {
     try {
-      final meetingDocRef = _db.collection('meetings').doc(meeting.id.toString());
-      
+      final meetingDocRef = _db
+          .collection('meetings')
+          .doc(meeting.id.toString());
+
       // Load transcript and summary if not loaded
       await meeting.transcript.load();
       await meeting.summary.load();
@@ -49,20 +50,24 @@ class FirestoreService {
         'id': meeting.id,
         'userId': userId,
         'title': meeting.title,
-        'createdAt': meeting.createdAt != null ? Timestamp.fromDate(meeting.createdAt!) : null,
+        'createdAt': meeting.createdAt != null
+            ? Timestamp.fromDate(meeting.createdAt!)
+            : null,
         'durationSeconds': meeting.durationSeconds,
         'audioFilePath': meeting.audioFilePath,
         'detectedEmotion': meeting.detectedEmotion,
         'emotionConfidence': meeting.emotionConfidence,
         'isRecording': meeting.isRecording,
-        'summary': summaryVal != null ? {
-          'executiveSummary': summaryVal.executiveSummary,
-          'meetingNotes': summaryVal.meetingNotes,
-          'keyTakeaways': summaryVal.keyTakeaways,
-          'followUps': summaryVal.followUps,
-          'risks': summaryVal.risks,
-          'deadlines': summaryVal.deadlines,
-        } : null,
+        'summary': summaryVal != null
+            ? {
+                'executiveSummary': summaryVal.executiveSummary,
+                'meetingNotes': summaryVal.meetingNotes,
+                'keyTakeaways': summaryVal.keyTakeaways,
+                'followUps': summaryVal.followUps,
+                'risks': summaryVal.risks,
+                'deadlines': summaryVal.deadlines,
+              }
+            : null,
         'decisions': meeting.decisions.map((d) => d.description).toList(),
       };
 
@@ -88,7 +93,9 @@ class FirestoreService {
         await saveTask(task, userId);
       }
 
-      debugPrint('[FirestoreService] Synced meeting ${meeting.id} to Firestore');
+      debugPrint(
+        '[FirestoreService] Synced meeting ${meeting.id} to Firestore',
+      );
     } catch (e) {
       debugPrint('[FirestoreService ERROR] saveMeeting failed: $e');
     }
@@ -97,15 +104,17 @@ class FirestoreService {
   Future<void> deleteMeeting(int meetingId, String userId) async {
     try {
       final docRef = _db.collection('meetings').doc(meetingId.toString());
-      
+
       // Delete segments subcollection
       final segments = await docRef.collection('segments').get();
       for (final doc in segments.docs) {
         await doc.reference.delete();
       }
-      
+
       await docRef.delete();
-      debugPrint('[FirestoreService] Deleted meeting $meetingId from Firestore');
+      debugPrint(
+        '[FirestoreService] Deleted meeting $meetingId from Firestore',
+      );
     } catch (e) {
       debugPrint('[FirestoreService ERROR] deleteMeeting failed: $e');
     }
@@ -120,7 +129,9 @@ class FirestoreService {
         'userId': userId,
         'meetingId': task.meeting.value?.id,
         'description': task.description,
-        'deadline': task.deadline != null ? Timestamp.fromDate(task.deadline!) : null,
+        'deadline': task.deadline != null
+            ? Timestamp.fromDate(task.deadline!)
+            : null,
         'isCompleted': task.isCompleted,
         'assignedTo': task.assignedTo,
         'priority': task.priority,
@@ -141,9 +152,14 @@ class FirestoreService {
   }
 
   // --- ACTIVITY LOGS ---
-  Future<void> saveActivity(DateTime date, double durationSeconds, String userId) async {
+  Future<void> saveActivity(
+    DateTime date,
+    double durationSeconds,
+    String userId,
+  ) async {
     try {
-      final dateKey = '${date.year}_${date.month.toString().padLeft(2, '0')}_${date.day.toString().padLeft(2, '0')}';
+      final dateKey =
+          '${date.year}_${date.month.toString().padLeft(2, '0')}_${date.day.toString().padLeft(2, '0')}';
       final docId = '${userId}_$dateKey';
 
       await _db.collection('activity').doc(docId).set({

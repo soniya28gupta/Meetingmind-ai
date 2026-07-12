@@ -17,11 +17,13 @@ class OpenAIService {
     if (_ref != null) {
       return _ref.read(dioProvider);
     }
-    return Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 20),
-      receiveTimeout: const Duration(seconds: 120),
-      sendTimeout: const Duration(seconds: 120),
-    ));
+    return Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 120),
+        sendTimeout: const Duration(seconds: 120),
+      ),
+    );
   }
 
   String get _ollamaBaseUrl {
@@ -44,16 +46,18 @@ class OpenAIService {
     return _ollamaBaseUrl;
   }
 
-
   /// Helper method to make POST request with retry logic (up to 3 times)
-  Future<Response> _postWithRetry(String path, {required Map<String, dynamic> data}) async {
+  Future<Response> _postWithRetry(
+    String path, {
+    required Map<String, dynamic> data,
+  }) async {
     final activeBaseUrl = await _findWorkingOllamaUrl();
-    
+
     int retryCount = 0;
     const int maxRetries = 3;
     Duration delay = const Duration(seconds: 2);
     final String url = '$activeBaseUrl$path';
-    
+
     while (true) {
       final startTime = DateTime.now();
       print("===== OLLAMA REQUEST START =====");
@@ -61,21 +65,19 @@ class OpenAIService {
       print("Request Start Time: $startTime");
       print("Payload: $data");
       print("Attempt: ${retryCount + 1} / $maxRetries");
-      
+
       try {
         final response = await _dio.post(
           url,
           options: Options(
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: {'Content-Type': 'application/json'},
             connectTimeout: const Duration(seconds: 20),
             receiveTimeout: const Duration(seconds: 120),
             sendTimeout: const Duration(seconds: 120),
           ),
           data: data,
         );
-        
+
         final endTime = DateTime.now();
         print("===== OLLAMA REQUEST SUCCESS =====");
         print("Ollama URL: $url");
@@ -91,12 +93,14 @@ class OpenAIService {
         print("Request End Time: $endTime");
         print("Duration: ${endTime.difference(startTime).inMilliseconds} ms");
         print("Error Details: $e");
-        
+
         retryCount++;
         if (retryCount >= maxRetries) {
           throw _parseDioErrorCustom(e, activeBaseUrl);
         }
-        print("[Ollama Connection Retry] Waiting ${delay.inSeconds}s before next attempt...");
+        print(
+          "[Ollama Connection Retry] Waiting ${delay.inSeconds}s before next attempt...",
+        );
         await Future.delayed(delay);
         delay = delay * 2;
       }
@@ -108,21 +112,33 @@ class OpenAIService {
     if (error is DioException) {
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
-          return Exception('Connection timed out. Ensure the Ollama server is running at $activeUrl and accessible.');
+          return Exception(
+            'Connection timed out. Ensure the Ollama server is running at $activeUrl and accessible.',
+          );
         case DioExceptionType.sendTimeout:
-          return Exception('Failed to send data to the server at $activeUrl. Please check your network.');
+          return Exception(
+            'Failed to send data to the server at $activeUrl. Please check your network.',
+          );
         case DioExceptionType.receiveTimeout:
-          return Exception('The Ollama server at $activeUrl took too long to respond. The model might still be loading or generating.');
+          return Exception(
+            'The Ollama server at $activeUrl took too long to respond. The model might still be loading or generating.',
+          );
         case DioExceptionType.badResponse:
           final statusCode = error.response?.statusCode;
-          return Exception('Server at $activeUrl returned an error status ($statusCode). Please verify the server state.');
+          return Exception(
+            'Server at $activeUrl returned an error status ($statusCode). Please verify the server state.',
+          );
         case DioExceptionType.cancel:
           return Exception('The request to $activeUrl was cancelled.');
         case DioExceptionType.connectionError:
-          return Exception('Cannot connect to the Ollama server at $activeUrl. Verify the IP address, running status, and network connection.');
+          return Exception(
+            'Cannot connect to the Ollama server at $activeUrl. Verify the IP address, running status, and network connection.',
+          );
         default:
           if (error.error is SocketException) {
-            return Exception('Network connection error at $activeUrl: ${error.error}. Please check local network connectivity.');
+            return Exception(
+              'Network connection error at $activeUrl: ${error.error}. Please check local network connectivity.',
+            );
           }
           return Exception('API error at $activeUrl: ${error.message}');
       }
@@ -214,7 +230,9 @@ class OpenAIService {
       }
     }
 
-    throw const FormatException('Could not parse a valid JSON response from the Ollama model.');
+    throw const FormatException(
+      'Could not parse a valid JSON response from the Ollama model.',
+    );
   }
 
   /// Generates a structured summary, list of action items, and decisions from the transcript
@@ -227,11 +245,14 @@ class OpenAIService {
       print("Ollama URL: $activeBaseUrl");
       print("Model name: $_ollamaModel");
       print("Transcript length: ${fullTranscript.length}");
-      print("Transcript content preview: ${fullTranscript.substring(0, fullTranscript.length > 200 ? 200 : fullTranscript.length)}...");
+      print(
+        "Transcript content preview: ${fullTranscript.substring(0, fullTranscript.length > 200 ? 200 : fullTranscript.length)}...",
+      );
 
       final requestData = {
         'model': _ollamaModel,
-        'prompt': '''
+        'prompt':
+            '''
 Analyze this meeting transcript and extract:
 1. Executive Summary: A very concise summary paragraph under the key "summary". It MUST start with: "📋 Meeting Summary".
 2. Detailed Notes: Detailed notes of the meeting under the key "meetingNotes" as bullet points.
@@ -271,10 +292,7 @@ $fullTranscript
       };
       print("Request payload: $requestData");
 
-      final response = await _postWithRetry(
-        '/api/generate',
-        data: requestData,
-      );
+      final response = await _postWithRetry('/api/generate', data: requestData);
 
       print("Response status code: ${response.statusCode}");
       print("Response body:\n${response.data}");
@@ -289,18 +307,24 @@ $fullTranscript
       }
 
       print("===== OLLAMA RESPONSE RECEIVED =====");
-      
+
       Map<String, dynamic> jsonResult;
       try {
         jsonResult = _extractJson(content);
         print("===== JSON DECODED SUCCESSFULLY =====");
       } catch (jsonErr) {
-        print("[Ollama JSON Error] Failed to parse JSON from response. Exact response content was:\n$content");
-        throw Exception('Ollama response returned invalid JSON formatting: $jsonErr. Exact response content was:\n$content');
+        print(
+          "[Ollama JSON Error] Failed to parse JSON from response. Exact response content was:\n$content",
+        );
+        throw Exception(
+          'Ollama response returned invalid JSON formatting: $jsonErr. Exact response content was:\n$content',
+        );
       }
 
       // Robust fallback parsing
-      final rawSummaryText = (jsonResult['summary'] ?? jsonResult['executiveSummary'] ?? '').toString();
+      final rawSummaryText =
+          (jsonResult['summary'] ?? jsonResult['executiveSummary'] ?? '')
+              .toString();
       final summary = SummaryModel()
         ..executiveSummary = rawSummaryText
         ..meetingNotes = (jsonResult['meetingNotes'] ?? '').toString()
@@ -319,28 +343,33 @@ $fullTranscript
               if (deadlineStr != null && deadlineStr.trim().isNotEmpty) {
                 deadline = _parseSmartDeadline(deadlineStr);
               }
-              
+
               // Priority auto-classification rules
               var priorityStr = item['priority']?.toString() ?? 'Medium';
               final taskLower = taskStr.toLowerCase();
               final deadlineLower = (deadlineStr ?? '').toLowerCase();
-              if (taskLower.contains('urgent') || 
-                  taskLower.contains('asap') || 
-                  taskLower.contains('today') || 
+              if (taskLower.contains('urgent') ||
+                  taskLower.contains('asap') ||
+                  taskLower.contains('today') ||
                   deadlineLower.contains('today')) {
                 priorityStr = 'High';
               }
-              
-              final assigneeStr = (item['assignee'] ?? item['assignedTo'])?.toString();
+
+              final assigneeStr = (item['assignee'] ?? item['assignedTo'])
+                  ?.toString();
               final statusStr = item['status']?.toString() ?? 'pending';
-              final isCompleted = statusStr.toLowerCase() == 'completed' || statusStr.toLowerCase() == 'done';
-              
-              actionItemsList.add(ActionItemModel()
-                ..description = taskStr
-                ..assignedTo = assigneeStr
-                ..deadline = deadline
-                ..priority = priorityStr
-                ..isCompleted = isCompleted);
+              final isCompleted =
+                  statusStr.toLowerCase() == 'completed' ||
+                  statusStr.toLowerCase() == 'done';
+
+              actionItemsList.add(
+                ActionItemModel()
+                  ..description = taskStr
+                  ..assignedTo = assigneeStr
+                  ..deadline = deadline
+                  ..priority = priorityStr
+                  ..isCompleted = isCompleted,
+              );
             }
           }
         }
@@ -368,7 +397,9 @@ $fullTranscript
         'decisions': decisionsList,
       };
     } catch (e, stackTrace) {
-      print("[AI Summary Error] generateMeetingAnalysis failed: $e. Using local offline fallback.");
+      print(
+        "[AI Summary Error] generateMeetingAnalysis failed: $e. Using local offline fallback.",
+      );
       print(stackTrace);
       return _generateMeetingAnalysisFallback(fullTranscript);
     }
@@ -385,7 +416,8 @@ $fullTranscript
       final activeBaseUrl = await _findWorkingOllamaUrl();
       final requestData = {
         'model': _ollamaModel,
-        'prompt': '''
+        'prompt':
+            '''
 Based on the following meeting biometrics and transcript, generate short, professional insight summaries (1-2 sentences each) for the user's:
 1. Stress Analysis: How did the user's stress fluctuate? (e.g. "User stress increased during discussion.")
 2. Engagement Analysis: How engaged was the user? (e.g. "Engagement dropped after minute 32.")
@@ -418,7 +450,8 @@ Return your response ONLY as a JSON block with these keys:
           final jsonResult = _extractJson(content);
           return {
             'stressAnalysis': (jsonResult['stressAnalysis'] ?? '').toString(),
-            'engagementAnalysis': (jsonResult['engagementAnalysis'] ?? '').toString(),
+            'engagementAnalysis': (jsonResult['engagementAnalysis'] ?? '')
+                .toString(),
             'focusAnalysis': (jsonResult['focusAnalysis'] ?? '').toString(),
             'energyAnalysis': (jsonResult['energyAnalysis'] ?? '').toString(),
           };
@@ -426,7 +459,11 @@ Return your response ONLY as a JSON block with these keys:
       }
     } catch (_) {}
 
-    return _generateBiometricAnalysisFallback(heartRateAverage, heartRatePeak, stressAverage);
+    return _generateBiometricAnalysisFallback(
+      heartRateAverage,
+      heartRatePeak,
+      stressAverage,
+    );
   }
 
   Map<String, String> _generateBiometricAnalysisFallback(
@@ -436,28 +473,36 @@ Return your response ONLY as a JSON block with these keys:
   ) {
     String stressText;
     if (stressAverage > 70) {
-      stressText = 'User stress level was elevated during intense periods of the discussion, peaking alongside key deliverables.';
+      stressText =
+          'User stress level was elevated during intense periods of the discussion, peaking alongside key deliverables.';
     } else if (stressAverage > 45) {
-      stressText = 'Moderate stress response detected. Stress level increased slightly during key presentation turns.';
+      stressText =
+          'Moderate stress response detected. Stress level increased slightly during key presentation turns.';
     } else {
-      stressText = 'User stress remained stable and in the calm zone throughout the meeting.';
+      stressText =
+          'User stress remained stable and in the calm zone throughout the meeting.';
     }
 
     String engagementText;
     if (heartRateAverage > 85) {
-      engagementText = 'Active cardiovascular participation indicates high conversational engagement.';
+      engagementText =
+          'Active cardiovascular participation indicates high conversational engagement.';
     } else {
-      engagementText = 'Circadian metrics indicate relaxed active listening and steady focus levels.';
+      engagementText =
+          'Circadian metrics indicate relaxed active listening and steady focus levels.';
     }
 
     String focusText;
     if (stressAverage < 40) {
-      focusText = 'Cognitive focus was optimal and calm, showing high capability for decision making.';
+      focusText =
+          'Cognitive focus was optimal and calm, showing high capability for decision making.';
     } else {
-      focusText = 'High heart rate variability indicators suggest high cognitive processing during complex sections.';
+      focusText =
+          'High heart rate variability indicators suggest high cognitive processing during complex sections.';
     }
 
-    String energyText = 'Heart rate averaged $heartRateAverage bpm and remained stable throughout the meeting.';
+    String energyText =
+        'Heart rate averaged $heartRateAverage bpm and remained stable throughout the meeting.';
 
     return {
       'stressAnalysis': stressText,
@@ -474,7 +519,7 @@ Return your response ONLY as a JSON block with these keys:
     final lines = fullTranscript.split('\n');
     final Map<String, List<String>> speakerSentences = {};
     final allSentencesWithSpeaker = <Map<String, String>>[];
-    
+
     // Split sentences and attribute them to speakers
     for (final line in lines) {
       final parts = line.split(':');
@@ -488,7 +533,10 @@ Return your response ONLY as a JSON block with these keys:
             final cleanedS = s.trim();
             if (cleanedS.isNotEmpty) {
               speakerSentences[speaker]!.add(cleanedS);
-              allSentencesWithSpeaker.add({'speaker': speaker, 'text': cleanedS});
+              allSentencesWithSpeaker.add({
+                'speaker': speaker,
+                'text': cleanedS,
+              });
             }
           }
         }
@@ -497,7 +545,10 @@ Return your response ONLY as a JSON block with these keys:
         final sentences = cleanedS.split(RegExp(r'(?<=[.!?])\s+'));
         for (final s in sentences) {
           if (s.trim().isNotEmpty) {
-            allSentencesWithSpeaker.add({'speaker': 'Unknown', 'text': s.trim()});
+            allSentencesWithSpeaker.add({
+              'speaker': 'Unknown',
+              'text': s.trim(),
+            });
           }
         }
       }
@@ -507,22 +558,32 @@ Return your response ONLY as a JSON block with these keys:
     final summaryBuf = StringBuffer();
     summaryBuf.writeln('📋 Meeting Summary (Offline Fallback)');
     if (allSentencesWithSpeaker.isEmpty) {
-      summaryBuf.writeln('• No transcript content was captured in this meeting.');
+      summaryBuf.writeln(
+        '• No transcript content was captured in this meeting.',
+      );
     } else {
-      summaryBuf.writeln('• A meeting was recorded with ${speakerSentences.keys.length} speaker(s).');
+      summaryBuf.writeln(
+        '• A meeting was recorded with ${speakerSentences.keys.length} speaker(s).',
+      );
       int count = 0;
       for (final item in allSentencesWithSpeaker) {
         final txt = item['text']!;
-        if (txt.toLowerCase().contains('need to') || txt.toLowerCase().contains('decided') || txt.toLowerCase().contains('agree')) {
+        if (txt.toLowerCase().contains('need to') ||
+            txt.toLowerCase().contains('decided') ||
+            txt.toLowerCase().contains('agree')) {
           summaryBuf.writeln('• Highlight: "${item['speaker']}: $txt"');
           count++;
           if (count >= 3) break;
         }
       }
       if (count == 0) {
-        final limit = allSentencesWithSpeaker.length < 2 ? allSentencesWithSpeaker.length : 2;
+        final limit = allSentencesWithSpeaker.length < 2
+            ? allSentencesWithSpeaker.length
+            : 2;
         for (int i = 0; i < limit; i++) {
-          summaryBuf.writeln('• Discussed: "${allSentencesWithSpeaker[i]['speaker']}: ${allSentencesWithSpeaker[i]['text']}"');
+          summaryBuf.writeln(
+            '• Discussed: "${allSentencesWithSpeaker[i]['speaker']}: ${allSentencesWithSpeaker[i]['text']}"',
+          );
         }
       }
     }
@@ -532,7 +593,10 @@ Return your response ONLY as a JSON block with these keys:
     int noteCount = 0;
     for (final item in allSentencesWithSpeaker) {
       final txt = item['text']!;
-      if (txt.length > 20 && !txt.toLowerCase().startsWith('hello') && !txt.toLowerCase().startsWith('hi') && !txt.toLowerCase().startsWith('ok')) {
+      if (txt.length > 20 &&
+          !txt.toLowerCase().startsWith('hello') &&
+          !txt.toLowerCase().startsWith('hi') &&
+          !txt.toLowerCase().startsWith('ok')) {
         notesBuf.writeln('• ${item['speaker']}: $txt');
         noteCount++;
         if (noteCount >= 10) break;
@@ -548,14 +612,20 @@ Return your response ONLY as a JSON block with these keys:
       takeawaysBuf.writeln('👤 ${entry.key}:');
       int spkTakeawayCount = 0;
       for (final s in entry.value) {
-        if (s.toLowerCase().contains('think') || s.toLowerCase().contains('want') || s.toLowerCase().contains('will') || s.toLowerCase().contains('need') || s.length > 30) {
+        if (s.toLowerCase().contains('think') ||
+            s.toLowerCase().contains('want') ||
+            s.toLowerCase().contains('will') ||
+            s.toLowerCase().contains('need') ||
+            s.length > 30) {
           takeawaysBuf.writeln('  - $s');
           spkTakeawayCount++;
           if (spkTakeawayCount >= 3) break;
         }
       }
       if (spkTakeawayCount == 0 && entry.value.isNotEmpty) {
-        takeawaysBuf.writeln('  - Participated in discussions: "${entry.value.first}"');
+        takeawaysBuf.writeln(
+          '  - Participated in discussions: "${entry.value.first}"',
+        );
       }
     }
     if (takeawaysBuf.isEmpty) {
@@ -564,7 +634,21 @@ Return your response ONLY as a JSON block with these keys:
 
     // 4. Risks & Concerns
     final risksBuf = StringBuffer();
-    final riskKeywords = ['risk', 'worry', 'concern', 'block', 'slow', 'delay', 'issue', 'problem', 'fail', 'difficult', 'error', 'bug', 'prevent'];
+    final riskKeywords = [
+      'risk',
+      'worry',
+      'concern',
+      'block',
+      'slow',
+      'delay',
+      'issue',
+      'problem',
+      'fail',
+      'difficult',
+      'error',
+      'bug',
+      'prevent',
+    ];
     int riskCount = 0;
     for (final item in allSentencesWithSpeaker) {
       final txt = item['text']!;
@@ -581,7 +665,21 @@ Return your response ONLY as a JSON block with these keys:
 
     // 5. Deadlines & Milestones
     final deadlinesBuf = StringBuffer();
-    final deadlineKeywords = ['deadline', 'by ', 'due', 'tomorrow', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'next week', 'milestone'];
+    final deadlineKeywords = [
+      'deadline',
+      'by ',
+      'due',
+      'tomorrow',
+      'friday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'saturday',
+      'sunday',
+      'next week',
+      'milestone',
+    ];
     int deadlineCount = 0;
     for (final item in allSentencesWithSpeaker) {
       final txt = item['text']!;
@@ -593,7 +691,9 @@ Return your response ONLY as a JSON block with these keys:
       }
     }
     if (deadlinesBuf.isEmpty) {
-      deadlinesBuf.writeln('• No specific deadlines or milestone dates were mentioned.');
+      deadlinesBuf.writeln(
+        '• No specific deadlines or milestone dates were mentioned.',
+      );
     }
 
     final summary = SummaryModel()
@@ -605,7 +705,16 @@ Return your response ONLY as a JSON block with these keys:
 
     // 6. Action Items
     final actionItemsList = <ActionItemModel>[];
-    final actionKeywords = ['todo', 'need to', 'must', 'should', 'will ', 'task', 'assignee', 'action item'];
+    final actionKeywords = [
+      'todo',
+      'need to',
+      'must',
+      'should',
+      'will ',
+      'task',
+      'assignee',
+      'action item',
+    ];
     int taskCount = 0;
     for (final item in allSentencesWithSpeaker) {
       final txt = item['text']!;
@@ -616,7 +725,7 @@ Return your response ONLY as a JSON block with these keys:
         if (speaker != 'Unknown') {
           assignee = speaker;
         }
-        
+
         if (txtLower.contains('i will') || txtLower.contains('i need to')) {
           assignee = speaker;
         } else {
@@ -627,7 +736,17 @@ Return your response ONLY as a JSON block with these keys:
         }
 
         String deadlineStr = '';
-        for (final k in ['tomorrow', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'next week']) {
+        for (final k in [
+          'tomorrow',
+          'friday',
+          'monday',
+          'tuesday',
+          'wednesday',
+          'thursday',
+          'saturday',
+          'sunday',
+          'next week',
+        ]) {
           if (txtLower.contains(k)) {
             deadlineStr = k;
             break;
@@ -640,16 +759,21 @@ Return your response ONLY as a JSON block with these keys:
         }
 
         String priority = 'Medium';
-        if (txtLower.contains('urgent') || txtLower.contains('asap') || txtLower.contains('must') || txtLower.contains('critical')) {
+        if (txtLower.contains('urgent') ||
+            txtLower.contains('asap') ||
+            txtLower.contains('must') ||
+            txtLower.contains('critical')) {
           priority = 'High';
         }
 
-        actionItemsList.add(ActionItemModel()
-          ..description = txt
-          ..assignedTo = assignee ?? 'Unassigned'
-          ..deadline = deadline
-          ..priority = priority
-          ..isCompleted = false);
+        actionItemsList.add(
+          ActionItemModel()
+            ..description = txt
+            ..assignedTo = assignee ?? 'Unassigned'
+            ..deadline = deadline
+            ..priority = priority
+            ..isCompleted = false,
+        );
 
         taskCount++;
         if (taskCount >= 10) break;
@@ -658,7 +782,15 @@ Return your response ONLY as a JSON block with these keys:
 
     // 7. Key Decisions
     final decisionsList = <DecisionModel>[];
-    final decisionKeywords = ['decide', 'agree', 'approve', 'confirm', 'resolve', 'settle', 'conclusion'];
+    final decisionKeywords = [
+      'decide',
+      'agree',
+      'approve',
+      'confirm',
+      'resolve',
+      'settle',
+      'conclusion',
+    ];
     int decCount = 0;
     for (final item in allSentencesWithSpeaker) {
       final txt = item['text']!;
@@ -681,7 +813,7 @@ Return your response ONLY as a JSON block with these keys:
   DateTime? _parseSmartDeadline(String deadlineStr) {
     final now = DateTime.now();
     final lower = deadlineStr.trim().toLowerCase();
-    
+
     if (lower == 'today') {
       return DateTime(now.year, now.month, now.day);
     }
@@ -693,7 +825,7 @@ Return your response ONLY as a JSON block with these keys:
       final nextWeek = now.add(const Duration(days: 7));
       return DateTime(nextWeek.year, nextWeek.month, nextWeek.day);
     }
-    
+
     final weekdays = {
       'monday': DateTime.monday,
       'tuesday': DateTime.tuesday,
@@ -703,7 +835,7 @@ Return your response ONLY as a JSON block with these keys:
       'saturday': DateTime.saturday,
       'sunday': DateTime.sunday,
     };
-    
+
     for (final entry in weekdays.entries) {
       if (lower == entry.key) {
         int daysToAdd = entry.value - now.weekday;
@@ -714,7 +846,7 @@ Return your response ONLY as a JSON block with these keys:
         return DateTime(target.year, target.month, target.day);
       }
     }
-    
+
     if (lower.startsWith('next ')) {
       final dayPart = lower.substring(5).trim();
       for (final entry in weekdays.entries) {
@@ -729,12 +861,12 @@ Return your response ONLY as a JSON block with these keys:
         }
       }
     }
-    
+
     try {
       final parsed = DateTime.tryParse(deadlineStr);
       if (parsed != null) return parsed;
     } catch (_) {}
-    
+
     return null;
   }
 
@@ -752,7 +884,8 @@ Return your response ONLY as a JSON block with these keys:
         '/api/generate',
         data: {
           'model': _ollamaModel,
-          'prompt': '''
+          'prompt':
+              '''
 You are a meeting assistant.
 
 Meeting Transcript:
@@ -779,12 +912,53 @@ Answer:
     }
   }
 
+  /// Sends a raw transcript block to Ollama for grammar and punctuation correction.
+  /// Returns the corrected transcript, or the original text as fallback if Ollama fails.
+  Future<String> correctTranscriptGrammar(String rawTranscript) async {
+    if (rawTranscript.trim().isEmpty) return rawTranscript;
+    try {
+      print(
+        '[TranscriptCorrection] Sending text to Ollama for grammar correction...',
+      );
+      final response = await _postWithRetry(
+        '/api/generate',
+        data: {
+          'model': _ollamaModel,
+          'prompt': '''You are a professional transcript editor.
+Improve grammar and punctuation of the following meeting transcript without changing any meaning, names, or content.
+Return ONLY the corrected transcript text with no explanations, no preamble, no "Here is the corrected text:" prefix.
+Preserve paragraph structure where natural sentence breaks occur.
+
+Transcript:
+$rawTranscript''',
+          'stream': false,
+        },
+      );
+      final responseText = response.data['response'] as String?;
+      if (responseText == null || responseText.trim().isEmpty) {
+        print(
+          '[TranscriptCorrection] Ollama returned empty response. Using original.',
+        );
+        return rawTranscript;
+      }
+      print('[TranscriptCorrection] Grammar correction complete.');
+      return responseText.trim();
+    } catch (e) {
+      print(
+        '[TranscriptCorrection] Ollama grammar correction failed: $e. Using original transcript.',
+      );
+      return rawTranscript;
+    }
+  }
+
   Future<Map<String, dynamic>> checkOllamaHealth() async {
     final activeBaseUrl = await _findWorkingOllamaUrl();
     final targetModel = _ollamaModel;
-    print("[Ollama Health Check] Checking connectivity to: $activeBaseUrl/api/tags");
+    print(
+      "[Ollama Health Check] Checking connectivity to: $activeBaseUrl/api/tags",
+    );
     final startTime = DateTime.now();
-    
+
     try {
       final response = await _dio.get(
         '$activeBaseUrl/api/tags',
@@ -793,12 +967,14 @@ Answer:
           receiveTimeout: const Duration(seconds: 120),
         ),
       );
-      
+
       final endTime = DateTime.now();
-      print("[Ollama Health Check] Success in ${endTime.difference(startTime).inMilliseconds} ms");
+      print(
+        "[Ollama Health Check] Success in ${endTime.difference(startTime).inMilliseconds} ms",
+      );
       print("[Ollama Health Check] Status Code: ${response.statusCode}");
       print("[Ollama Health Check] Response Body: ${response.data}");
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         List<String> models = [];
@@ -809,29 +985,33 @@ Answer:
             }
           }
         }
-        
+
         if (models.isEmpty) {
           return {
             'online': false,
             'url': activeBaseUrl,
             'reason': 'no model loaded',
-            'details': 'Ollama server has no models installed. Please pull a model (e.g., ollama pull $targetModel).',
+            'details':
+                'Ollama server has no models installed. Please pull a model (e.g., ollama pull $targetModel).',
             'models': <String>[],
           };
         }
-        
+
         // Check if the configured model exists in the list
-        final hasConfiguredModel = models.any((m) => m == targetModel || m.startsWith('$targetModel:'));
+        final hasConfiguredModel = models.any(
+          (m) => m == targetModel || m.startsWith('$targetModel:'),
+        );
         if (!hasConfiguredModel) {
           return {
             'online': false,
             'url': activeBaseUrl,
             'reason': 'no model loaded',
-            'details': 'Model "$targetModel" is not loaded on Ollama. Loaded models: ${models.join(", ")}.',
+            'details':
+                'Model "$targetModel" is not loaded on Ollama. Loaded models: ${models.join(", ")}.',
             'models': models,
           };
         }
-        
+
         return {
           'online': true,
           'url': activeBaseUrl,
@@ -840,34 +1020,40 @@ Answer:
           'models': models,
         };
       }
-      
+
       return {
         'online': false,
         'url': activeBaseUrl,
         'reason': 'invalid URL',
-        'details': 'Server returned unexpected status code: ${response.statusCode}',
+        'details':
+            'Server returned unexpected status code: ${response.statusCode}',
         'models': <String>[],
       };
     } catch (e) {
       final endTime = DateTime.now();
-      print("[Ollama Health Check ERROR] Health check failed in ${endTime.difference(startTime).inMilliseconds} ms. Error: $e");
-      
+      print(
+        "[Ollama Health Check ERROR] Health check failed in ${endTime.difference(startTime).inMilliseconds} ms. Error: $e",
+      );
+
       String reason = 'connection refused';
       String details = e.toString();
-      
+
       if (e is DioException) {
         final err = e;
         if (err.type == DioExceptionType.connectionTimeout ||
             err.type == DioExceptionType.receiveTimeout ||
             err.type == DioExceptionType.sendTimeout) {
           reason = 'timeout';
-          details = 'Connection timed out after 20 seconds. Ensure the server is reachable.';
+          details =
+              'Connection timed out after 20 seconds. Ensure the server is reachable.';
         } else if (err.type == DioExceptionType.connectionError) {
           reason = 'connection refused';
-          details = 'Connection refused. Ensure Ollama is running at $activeBaseUrl and listening on the correct network interface.';
+          details =
+              'Connection refused. Ensure Ollama is running at $activeBaseUrl and listening on the correct network interface.';
         } else if (err.type == DioExceptionType.badResponse) {
           reason = 'invalid URL';
-          details = 'Ollama server returned bad response (HTTP ${err.response?.statusCode}).';
+          details =
+              'Ollama server returned bad response (HTTP ${err.response?.statusCode}).';
         } else {
           reason = 'connection refused';
           details = 'Network error: ${err.message}';
@@ -876,7 +1062,7 @@ Answer:
         reason = 'invalid URL';
         details = 'Invalid URL format or response was not JSON: $e';
       }
-      
+
       return {
         'online': false,
         'url': activeBaseUrl,
@@ -887,20 +1073,87 @@ Answer:
     }
   }
 
-  Map<String, dynamic> _estimateEmotionsKeywordFallback(String fullTranscript, List<int> speakerIndexes) {
-    print("[OpenAIService] Running local keyword-based heuristic emotion estimation...");
+  Map<String, dynamic> _estimateEmotionsKeywordFallback(
+    String fullTranscript,
+    List<int> speakerIndexes,
+  ) {
+    print(
+      "[OpenAIService] Running local keyword-based heuristic emotion estimation...",
+    );
     final List<Map<String, dynamic>> speakerList = [];
-    
+
     final keywordMaps = {
-      'happy': ['happy', 'great', 'glad', 'awesome', 'wonderful', 'good', 'pleased', 'cheerful'],
-      'excited': ['excited', 'amazing', 'fantastic', 'love', 'cool', 'super', 'joy', 'eager'],
-      'confident': ['confident', 'sure', 'solve', 'resolved', 'clear', 'execute', 'achieve', 'positive'],
-      'concerned': ['concerned', 'worry', 'anxious', 'afraid', 'risk', 'problem', 'warn', 'careful'],
-      'frustrated': ['frustrated', 'annoy', 'stuck', 'block', 'slow', 'delay', 'issue', 'complaint'],
-      'angry': ['angry', 'mad', 'furious', 'bad', 'worst', 'fail', 'hate', 'dislike'],
+      'happy': [
+        'happy',
+        'great',
+        'glad',
+        'awesome',
+        'wonderful',
+        'good',
+        'pleased',
+        'cheerful',
+      ],
+      'excited': [
+        'excited',
+        'amazing',
+        'fantastic',
+        'love',
+        'cool',
+        'super',
+        'joy',
+        'eager',
+      ],
+      'confident': [
+        'confident',
+        'sure',
+        'solve',
+        'resolved',
+        'clear',
+        'execute',
+        'achieve',
+        'positive',
+      ],
+      'concerned': [
+        'concerned',
+        'worry',
+        'anxious',
+        'afraid',
+        'risk',
+        'problem',
+        'warn',
+        'careful',
+      ],
+      'frustrated': [
+        'frustrated',
+        'annoy',
+        'stuck',
+        'block',
+        'slow',
+        'delay',
+        'issue',
+        'complaint',
+      ],
+      'angry': [
+        'angry',
+        'mad',
+        'furious',
+        'bad',
+        'worst',
+        'fail',
+        'hate',
+        'dislike',
+      ],
       'bored': ['bored', 'tired', 'slow', 'sleepy', 'dull', 'tedious'],
       'nervous': ['nervous', 'shaky', 'uncertain', 'tense', 'scared'],
-      'thinking': ['thinking', 'consider', 'ponder', 'maybe', 'perhaps', 'wonder', 'analyze'],
+      'thinking': [
+        'thinking',
+        'consider',
+        'ponder',
+        'maybe',
+        'perhaps',
+        'wonder',
+        'analyze',
+      ],
       'calm': ['calm', 'relax', 'peace', 'quiet', 'smooth', 'stable'],
     };
 
@@ -910,7 +1163,9 @@ Answer:
       for (final entry in keywordMaps.entries) {
         int count = 0;
         for (final keyword in entry.value) {
-          final matches = RegExp(RegExp.escape(keyword)).allMatches(textLower).length;
+          final matches = RegExp(
+            RegExp.escape(keyword),
+          ).allMatches(textLower).length;
           count += matches;
         }
         if (count > 0) {
@@ -922,14 +1177,15 @@ Answer:
         return {'emotion': 'Neutral', 'confidence': 0.85};
       }
 
-      final sorted = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+      final sorted = counts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
       final primary = sorted.first.key;
-      
+
       final emotionFormatted = primary[0].toUpperCase() + primary.substring(1);
-      
+
       double confidence = 0.70 + (sorted.first.value * 0.05);
       if (confidence > 0.95) confidence = 0.95;
-      
+
       return {'emotion': emotionFormatted, 'confidence': confidence};
     }
 
@@ -940,7 +1196,10 @@ Answer:
     }
 
     for (final line in lines) {
-      final match = RegExp(r'^(?:Speaker\s+|👤\s*Speaker\s+)?(\d+)[\s:]', caseSensitive: false).firstMatch(line);
+      final match = RegExp(
+        r'^(?:Speaker\s+|👤\s*Speaker\s+)?(\d+)[\s:]',
+        caseSensitive: false,
+      ).firstMatch(line);
       if (match != null) {
         final spkNum = int.tryParse(match.group(1) ?? '');
         if (spkNum != null && speakerTexts.containsKey(spkNum)) {
@@ -974,9 +1233,12 @@ Answer:
   }) async {
     try {
       final activeBaseUrl = await _findWorkingOllamaUrl();
-      print("[OpenAIService] Querying Ollama for local emotion estimation at $activeBaseUrl...");
-      
-      final prompt = '''
+      print(
+        "[OpenAIService] Querying Ollama for local emotion estimation at $activeBaseUrl...",
+      );
+
+      final prompt =
+          '''
 Analyze this meeting transcript and estimate the emotional tone:
 1. For each speaker index in this list: $speakerIndexes, estimate their primary emotion from this list: Happy, Neutral, Confident, Excited, Frustrated, Angry, Sad, Calm. Return a confidence score between 0.0 and 1.0.
 2. Estimate the overall emotion of the meeting from the same list.
@@ -1006,10 +1268,7 @@ $fullTranscript
         'stream': false,
       };
 
-      final response = await _postWithRetry(
-        '/api/generate',
-        data: requestData,
-      );
+      final response = await _postWithRetry('/api/generate', data: requestData);
 
       if (response.statusCode == 200) {
         final content = response.data['response'] as String?;
@@ -1020,7 +1279,9 @@ $fullTranscript
       }
       throw Exception("Invalid response from Ollama");
     } catch (e) {
-      print("[OpenAIService] Ollama emotion estimation failed, falling back to local heuristic: $e");
+      print(
+        "[OpenAIService] Ollama emotion estimation failed, falling back to local heuristic: $e",
+      );
       return _estimateEmotionsKeywordFallback(fullTranscript, speakerIndexes);
     }
   }

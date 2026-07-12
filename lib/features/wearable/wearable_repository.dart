@@ -22,7 +22,9 @@ class WearableRepository {
     _wearableService.initialize();
 
     // Listen to live streams and save them to local Isar database
-    _sensorStreamSubscription = _wearableService.liveSensorDataStream.listen((data) async {
+    _sensorStreamSubscription = _wearableService.liveSensorDataStream.listen((
+      data,
+    ) async {
       await saveSensorReading(data);
     });
 
@@ -41,7 +43,8 @@ class WearableRepository {
   }
 
   int _generateId() {
-    return (DateTime.now().microsecondsSinceEpoch + Random().nextInt(1000)) & 0x7FFFFFFFFFFFFFFF;
+    return (DateTime.now().microsecondsSinceEpoch + Random().nextInt(1000)) &
+        0x7FFFFFFFFFFFFFFF;
   }
 
   Future<void> saveSensorReading(LiveSensorData reading) async {
@@ -58,7 +61,8 @@ class WearableRepository {
       ..heartRate = reading.heartRate
       ..stress = reading.stress
       ..steps = reading.steps
-      ..battery = reading.battery
+      ..battery =
+          null // battery now comes from phone metrics (battery_plus), not wearable
       ..sleep = reading.sleep
       ..isSynced = false;
 
@@ -66,11 +70,13 @@ class WearableRepository {
       await isar.writeTxn(() async {
         await isar.sensorReadingModels.put(model);
       });
-      
+
       // Update DailyMetrics aggregates locally
       await _updateDailyMetrics(reading);
     } catch (e) {
-      print("[WearableRepository ERROR] Failed to save local sensor reading: $e");
+      print(
+        "[WearableRepository ERROR] Failed to save local sensor reading: $e",
+      );
     }
   }
 
@@ -81,25 +87,36 @@ class WearableRepository {
 
     try {
       await isar.writeTxn(() async {
-        var daily = await isar.dailyMetricsModels.filter().dateEqualTo(todayStart).findFirst();
-        
+        var daily = await isar.dailyMetricsModels
+            .filter()
+            .dateEqualTo(todayStart)
+            .findFirst();
+
         if (daily == null) {
           daily = DailyMetricsModel()
             ..id = _generateId()
             ..date = todayStart
             ..totalSteps = reading.steps
-            ..averageHeartRate = reading.heartRate.toDouble()
+            ..averageHeartRate = reading.heartRate?.toDouble()
             ..sleepHours = reading.sleep
             ..sleepScore = 80.0
             ..stressScore = reading.stress
-            ..batteryLevel = reading.battery;
+            ..batteryLevel = null; // phone battery tracked separately
         } else {
-          // Keep highest step count as total steps, calculate rolling average for HR and stress
-          daily.totalSteps = max(daily.totalSteps ?? 0, reading.steps);
-          daily.averageHeartRate = ((daily.averageHeartRate ?? 72.0) * 19 + reading.heartRate) / 20.0;
-          daily.stressScore = ((daily.stressScore ?? 25.0) * 19 + reading.stress) / 20.0;
-          daily.sleepHours = reading.sleep;
-          daily.batteryLevel = reading.battery;
+          // Keep highest step count, rolling averages for HR and stress
+          if (reading.steps != null) {
+            daily.totalSteps = max(daily.totalSteps ?? 0, reading.steps!);
+          }
+          if (reading.heartRate != null) {
+            daily.averageHeartRate =
+                ((daily.averageHeartRate ?? 72.0) * 19 + reading.heartRate!) /
+                20.0;
+          }
+          if (reading.stress != null) {
+            daily.stressScore =
+                ((daily.stressScore ?? 25.0) * 19 + reading.stress!) / 20.0;
+          }
+          if (reading.sleep != null) daily.sleepHours = reading.sleep;
         }
         await isar.dailyMetricsModels.put(daily);
       });
@@ -113,18 +130,26 @@ class WearableRepository {
     if (user == null) return;
 
     final isar = IsarDatabase.instance.isar;
-    
+
     try {
-      final unsynced = await isar.sensorReadingModels.filter().isSyncedEqualTo(false).limit(50).findAll();
+      final unsynced = await isar.sensorReadingModels
+          .filter()
+          .isSyncedEqualTo(false)
+          .limit(50)
+          .findAll();
       if (unsynced.isEmpty) return;
 
       final batch = FirebaseFirestore.instance.batch();
       for (var reading in unsynced) {
-        final docRef = FirebaseFirestore.instance.collection('sensor_data').doc(reading.id.toString());
+        final docRef = FirebaseFirestore.instance
+            .collection('sensor_data')
+            .doc(reading.id.toString());
         batch.set(docRef, {
           'userId': user.uid,
           'deviceId': reading.deviceId,
-          'timestamp': reading.timestamp != null ? Timestamp.fromDate(reading.timestamp!) : FieldValue.serverTimestamp(),
+          'timestamp': reading.timestamp != null
+              ? Timestamp.fromDate(reading.timestamp!)
+              : FieldValue.serverTimestamp(),
           'heartRate': reading.heartRate,
           'steps': reading.steps,
           'sleep': reading.sleep,
@@ -134,16 +159,20 @@ class WearableRepository {
       }
 
       await batch.commit();
-      
+
       await isar.writeTxn(() async {
         for (var reading in unsynced) {
           reading.isSynced = true;
           await isar.sensorReadingModels.put(reading);
         }
       });
-      print("[WearableRepository] Synced ${unsynced.length} records to Firestore.");
+      print(
+        "[WearableRepository] Synced ${unsynced.length} records to Firestore.",
+      );
     } catch (e) {
-      print("[WearableRepository ERROR] Sync failed: $e. Will retry automatically.");
+      print(
+        "[WearableRepository ERROR] Sync failed: $e. Will retry automatically.",
+      );
     }
   }
 
@@ -153,9 +182,14 @@ class WearableRepository {
 
     try {
       await isar.writeTxn(() async {
-        final count = await isar.sensorReadingModels.filter().timestampLessThan(boundary).deleteAll();
+        final count = await isar.sensorReadingModels
+            .filter()
+            .timestampLessThan(boundary)
+            .deleteAll();
         if (count > 0) {
-          print("[WearableRepository] Cleaned up $count telemetry readings older than 30 days.");
+          print(
+            "[WearableRepository] Cleaned up $count telemetry readings older than 30 days.",
+          );
         }
       });
     } catch (e) {
@@ -198,7 +232,10 @@ class WearableRepository {
   Future<void> restorePreviousConnection() async {
     final isar = IsarDatabase.instance.isar;
     try {
-      final info = await isar.deviceInfoModels.filter().isAutoReconnectEnabledEqualTo(true).findFirst();
+      final info = await isar.deviceInfoModels
+          .filter()
+          .isAutoReconnectEnabledEqualTo(true)
+          .findFirst();
       if (info == null) return;
 
       final deviceType = WearableDeviceType.values.firstWhere(
@@ -213,9 +250,11 @@ class WearableRepository {
         rssi: -60,
       );
 
-      print("[WearableRepository] Restoring previous connection to ${device.name}...");
+      print(
+        "[WearableRepository] Restoring previous connection to ${device.name}...",
+      );
       await _wearableService.connectDevice(device);
-      
+
       // Update battery and last connected timestamp
       await saveConnectedDeviceInfo(device);
     } catch (e) {

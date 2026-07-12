@@ -21,7 +21,7 @@ class _PremiumGoogleLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double s = size.width / 24.0;
-    
+
     // 1. Red (Top)
     final Paint paintRed = Paint()
       ..color = const Color(0xFFEA4335)
@@ -76,7 +76,14 @@ class _PremiumGoogleLogoPainter extends CustomPainter {
       ..lineTo(12.0 * s, 9.44 * s)
       ..lineTo(12.0 * s, 13.95 * s)
       ..lineTo(17.52 * s, 13.95 * s)
-      ..cubicTo(17.28 * s, 15.23 * s, 16.56 * s, 16.32 * s, 15.48 * s, 17.05 * s)
+      ..cubicTo(
+        17.28 * s,
+        15.23 * s,
+        16.56 * s,
+        16.32 * s,
+        15.48 * s,
+        17.05 * s,
+      )
       ..lineTo(19.05 * s, 19.82 * s)
       ..cubicTo(21.13 * s, 17.9 * s, 22.33 * s, 15.08 * s, 22.33 * s, 11.72 * s)
       ..close();
@@ -87,7 +94,8 @@ class _PremiumGoogleLogoPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTickerProviderStateMixin {
+class _GoogleSignInButtonState extends State<GoogleSignInButton>
+    with SingleTickerProviderStateMixin {
   bool _isHovered = false;
   bool _isPressed = false;
   late AnimationController _shakeController;
@@ -100,16 +108,20 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
-    _shakeAnimation = Tween<double>(begin: 0.0, end: 12.0)
-        .chain(CurveTween(curve: Curves.elasticIn))
-        .animate(_shakeController);
+    _shakeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 12.0,
+    ).chain(CurveTween(curve: Curves.elasticIn)).animate(_shakeController);
   }
 
   @override
   void didUpdateWidget(covariant GoogleSignInButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.state == GoogleButtonState.error && oldWidget.state != GoogleButtonState.error) {
-      _shakeController.forward(from: 0.0).then((_) => _shakeController.reverse());
+    if (widget.state == GoogleButtonState.error &&
+        oldWidget.state != GoogleButtonState.error) {
+      _shakeController
+          .forward(from: 0.0)
+          .then((_) => _shakeController.reverse());
     }
   }
 
@@ -155,7 +167,11 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
         return const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_rounded, color: AppColors.success, size: 24),
+            Icon(
+              Icons.check_circle_rounded,
+              color: AppColors.success,
+              size: 24,
+            ),
             SizedBox(width: 12),
             Text(
               'Signed in successfully!',
@@ -209,7 +225,8 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    final bool isInteractive = widget.state == GoogleButtonState.idle && widget.onPressed != null;
+    final bool isInteractive =
+        widget.state == GoogleButtonState.idle && widget.onPressed != null;
 
     Color buttonColor;
     BorderSide borderSide;
@@ -223,8 +240,8 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
           color: widget.state == GoogleButtonState.success
               ? AppColors.success.withValues(alpha: 0.4)
               : widget.state == GoogleButtonState.error
-                  ? AppColors.error.withValues(alpha: 0.4)
-                  : AppColors.surfaceLight,
+              ? AppColors.error.withValues(alpha: 0.4)
+              : AppColors.surfaceLight,
           width: 1.0,
         );
         break;
@@ -250,7 +267,12 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
             if (_shakeController.isAnimating) {
               // Sine wave displacement
               shakeTranslation = widget.state == GoogleButtonState.error
-                  ? _shakeAnimation.value * (1.0 - _shakeController.value) * (Theme.of(context).platform == TargetPlatform.android ? -1.0 : 1.0) * (3.0 * (1.0 - _shakeController.value))
+                  ? _shakeAnimation.value *
+                        (1.0 - _shakeController.value) *
+                        (Theme.of(context).platform == TargetPlatform.android
+                            ? -1.0
+                            : 1.0) *
+                        (3.0 * (1.0 - _shakeController.value))
                   : 0.0;
             }
 
@@ -266,11 +288,15 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
                   decoration: BoxDecoration(
                     color: buttonColor,
                     borderRadius: BorderRadius.circular(12),
-                    border: borderSide != BorderSide.none ? Border.fromBorderSide(borderSide) : null,
+                    border: borderSide != BorderSide.none
+                        ? Border.fromBorderSide(borderSide)
+                        : null,
                     boxShadow: [
                       BoxShadow(
                         color: widget.state == GoogleButtonState.idle
-                            ? Colors.black.withValues(alpha: _isHovered ? 0.25 : 0.15)
+                            ? Colors.black.withValues(
+                                alpha: _isHovered ? 0.25 : 0.15,
+                              )
                             : Colors.transparent,
                         blurRadius: _isHovered ? 12 : 8,
                         spreadRadius: _isHovered ? 1 : 0,
@@ -278,9 +304,7 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> with SingleTick
                       ),
                     ],
                   ),
-                  child: Center(
-                    child: _buildContent(),
-                  ),
+                  child: Center(child: _buildContent()),
                 ),
               ),
             );

@@ -1,14 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../database/schemas/meeting_models.dart';
 import '../../providers/app_providers.dart';
-import '../../services/openai_service.dart';
+import '../../services/chat_service.dart';
 import '../../services/ollama_connection_manager.dart';
 
-class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel>>> {
+class MeetingChatNotifier
+    extends StateNotifier<AsyncValue<List<ChatMessageModel>>> {
   final Ref _ref;
   final int _meetingId;
 
-  MeetingChatNotifier(this._ref, this._meetingId) : super(const AsyncValue.loading()) {
+  MeetingChatNotifier(this._ref, this._meetingId)
+    : super(const AsyncValue.loading()) {
     _loadChatHistory();
   }
 
@@ -29,7 +31,7 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
 
   Future<void> sendMessage(String text) async {
     final currentMessages = state.value ?? [];
-    
+
     // 1. Create and save user message
     final userMessage = ChatMessageModel()
       ..message = text
@@ -38,12 +40,11 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
 
     final meetingRepo = _ref.read(meetingRepositoryProvider);
     await meetingRepo.addChatMessage(_meetingId, userMessage);
-    
+
     // Update local state temporarily
     state = AsyncValue.data([...currentMessages, userMessage]);
 
     // 2. Fetch API keys and meeting context
-  
 
     // Set loading indicator
     state = AsyncValue.data([
@@ -51,43 +52,53 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
       ChatMessageModel()
         ..message = '🤖 Thinking...'
         ..isUser = false
-        ..timestamp = DateTime.now()
+        ..timestamp = DateTime.now(),
     ]);
 
     try {
       final meeting = await meetingRepo.getMeetingById(_meetingId);
       final transcript = meeting?.transcript.value;
-      
+
       final String fullTranscriptText = transcript != null
-          ? transcript.segments.toList().map((e) => 'Speaker ${e.speaker}: ${e.text}').join('\n')
+          ? transcript.segments
+                .toList()
+                .map((e) => 'Speaker ${e.speaker}: ${e.text}')
+                .join('\n')
           : '';
 
       if (fullTranscriptText.trim().isEmpty) {
         // Remove placeholder
         final cleanList = state.value!.sublist(0, state.value!.length - 1);
         final emptyBotMessage = ChatMessageModel()
-          ..message = 'There is no transcript available for this meeting to analyze.'
+          ..message =
+              'There is no transcript available for this meeting to analyze.'
           ..isUser = false
           ..timestamp = DateTime.now();
         state = AsyncValue.data([...cleanList, emptyBotMessage]);
         return;
       }
 
-      // Call OpenAI API with context
-      final OpenAIService openAiService = _ref.read(openAIServiceProvider);
-      
+      // Call ChatService RAG API with context
+      final chatService = _ref.read(chatServiceProvider);
+
       // Verify Ollama connectivity before sending chat request
-      final connState = await _ref.read(ollamaConnectionManagerProvider.notifier).verifyHealth();
+      final connState = await _ref
+          .read(ollamaConnectionManagerProvider.notifier)
+          .verifyHealth();
       if (connState.status == OllamaConnectionStatus.offline) {
-        throw Exception('Ollama Offline (connection refused)\nDetails: ${connState.errorMessage ?? 'Connection refused.'}');
+        throw Exception(
+          'Ollama Offline (connection refused)\nDetails: ${connState.errorMessage ?? 'Connection refused.'}',
+        );
       } else if (connState.status == OllamaConnectionStatus.waitingForOllama) {
-        throw Exception('Ollama Waiting (model missing)\nDetails: ${connState.errorMessage ?? 'Model missing.'}');
+        throw Exception(
+          'Ollama Waiting (model missing)\nDetails: ${connState.errorMessage ?? 'Model missing.'}',
+        );
       }
 
-      final responseText = await openAiService.askMeetingQuestion(
-        fullTranscript: fullTranscriptText,
+      final responseText = await chatService.askAboutMeeting(
+        meetingId: _meetingId,
+        question: text,
         chatHistory: currentMessages,
-        currentQuestion: text,
       );
       final botMessage = ChatMessageModel()
         ..message = responseText
@@ -106,13 +117,19 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
       final errStr = e.toString().toLowerCase();
       if (errStr.contains('timeout') || errStr.contains('deadline')) {
         displayError = '⚠️ Timeout';
-      } else if (errStr.contains('connection refused') || errStr.contains('refused')) {
+      } else if (errStr.contains('connection refused') ||
+          errStr.contains('refused')) {
         displayError = '⚠️ Connection Refused';
-      } else if (errStr.contains('no model loaded') || errStr.contains('model missing') || errStr.contains('waiting') || errStr.contains('missing')) {
+      } else if (errStr.contains('no model loaded') ||
+          errStr.contains('model missing') ||
+          errStr.contains('waiting') ||
+          errStr.contains('missing')) {
         displayError = '⚠️ Model Missing';
       } else if (errStr.contains('invalid url') || errStr.contains('format')) {
         displayError = '⚠️ Invalid URL';
-      } else if (errStr.contains('server not running') || errStr.contains('unreachable') || errStr.contains('offline')) {
+      } else if (errStr.contains('server not running') ||
+          errStr.contains('unreachable') ||
+          errStr.contains('offline')) {
         displayError = '⚠️ Server Not Running';
       }
       final errorBotMessage = ChatMessageModel()
@@ -140,43 +157,53 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
       ChatMessageModel()
         ..message = '🤖 Thinking...'
         ..isUser = false
-        ..timestamp = DateTime.now()
+        ..timestamp = DateTime.now(),
     ]);
 
     try {
       final meetingRepo = _ref.read(meetingRepositoryProvider);
       final meeting = await meetingRepo.getMeetingById(_meetingId);
       final transcript = meeting?.transcript.value;
-      
+
       final String fullTranscriptText = transcript != null
-          ? transcript.segments.toList().map((e) => 'Speaker ${e.speaker}: ${e.text}').join('\n')
+          ? transcript.segments
+                .toList()
+                .map((e) => 'Speaker ${e.speaker}: ${e.text}')
+                .join('\n')
           : '';
 
       if (fullTranscriptText.trim().isEmpty) {
         final cleanList = state.value!.sublist(0, state.value!.length - 1);
         final emptyBotMessage = ChatMessageModel()
-          ..message = 'There is no transcript available for this meeting to analyze.'
+          ..message =
+              'There is no transcript available for this meeting to analyze.'
           ..isUser = false
           ..timestamp = DateTime.now();
         state = AsyncValue.data([...cleanList, emptyBotMessage]);
         return;
       }
 
-      // Call OpenAI API with context
-      final OpenAIService openAiService = _ref.read(openAIServiceProvider);
+      // Call ChatService RAG API with context
+      final chatService = _ref.read(chatServiceProvider);
 
       // Verify Ollama connectivity before sending chat request
-      final connState = await _ref.read(ollamaConnectionManagerProvider.notifier).verifyHealth();
+      final connState = await _ref
+          .read(ollamaConnectionManagerProvider.notifier)
+          .verifyHealth();
       if (connState.status == OllamaConnectionStatus.offline) {
-        throw Exception('Ollama Offline (connection refused)\nDetails: ${connState.errorMessage ?? 'Connection refused.'}');
+        throw Exception(
+          'Ollama Offline (connection refused)\nDetails: ${connState.errorMessage ?? 'Connection refused.'}',
+        );
       } else if (connState.status == OllamaConnectionStatus.waitingForOllama) {
-        throw Exception('Ollama Waiting (model missing)\nDetails: ${connState.errorMessage ?? 'Model missing.'}');
+        throw Exception(
+          'Ollama Waiting (model missing)\nDetails: ${connState.errorMessage ?? 'Model missing.'}',
+        );
       }
 
-      final responseText = await openAiService.askMeetingQuestion(
-        fullTranscript: fullTranscriptText,
+      final responseText = await chatService.askAboutMeeting(
+        meetingId: _meetingId,
+        question: originalText,
         chatHistory: cleanList,
-        currentQuestion: originalText,
       );
       final botMessage = ChatMessageModel()
         ..message = responseText
@@ -195,13 +222,19 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
       final errStr = e.toString().toLowerCase();
       if (errStr.contains('timeout') || errStr.contains('deadline')) {
         displayError = '⚠️ Timeout';
-      } else if (errStr.contains('connection refused') || errStr.contains('refused')) {
+      } else if (errStr.contains('connection refused') ||
+          errStr.contains('refused')) {
         displayError = '⚠️ Connection Refused';
-      } else if (errStr.contains('no model loaded') || errStr.contains('model missing') || errStr.contains('waiting') || errStr.contains('missing')) {
+      } else if (errStr.contains('no model loaded') ||
+          errStr.contains('model missing') ||
+          errStr.contains('waiting') ||
+          errStr.contains('missing')) {
         displayError = '⚠️ Model Missing';
       } else if (errStr.contains('invalid url') || errStr.contains('format')) {
         displayError = '⚠️ Invalid URL';
-      } else if (errStr.contains('server not running') || errStr.contains('unreachable') || errStr.contains('offline')) {
+      } else if (errStr.contains('server not running') ||
+          errStr.contains('unreachable') ||
+          errStr.contains('offline')) {
         displayError = '⚠️ Server Not Running';
       }
       final errorBotMessage = ChatMessageModel()
@@ -215,7 +248,9 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
   Future<void> clearChat() async {
     state = const AsyncValue.loading();
     try {
-      final meeting = await _ref.read(meetingRepositoryProvider).getMeetingById(_meetingId);
+      final meeting = await _ref
+          .read(meetingRepositoryProvider)
+          .getMeetingById(_meetingId);
       if (meeting != null) {
         final isar = _ref.read(isarProvider);
         await isar.writeTxn(() async {
@@ -232,6 +267,11 @@ class MeetingChatNotifier extends StateNotifier<AsyncValue<List<ChatMessageModel
   }
 }
 
-final meetingChatProvider = StateNotifierProvider.family<MeetingChatNotifier, AsyncValue<List<ChatMessageModel>>, int>((ref, meetingId) {
-  return MeetingChatNotifier(ref, meetingId);
-});
+final meetingChatProvider =
+    StateNotifierProvider.family<
+      MeetingChatNotifier,
+      AsyncValue<List<ChatMessageModel>>,
+      int
+    >((ref, meetingId) {
+      return MeetingChatNotifier(ref, meetingId);
+    });

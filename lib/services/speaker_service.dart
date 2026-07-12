@@ -32,7 +32,18 @@ class SpeakerService {
   ];
 
   static const List<String> _defaultEmojis = [
-    '😊', '🤔', '😌', '😀', '😎', '🦁', '🦊', '🦄', '🐼', '🐸', '🐨', '🐯'
+    '😊',
+    '🤔',
+    '😌',
+    '😀',
+    '😎',
+    '🦁',
+    '🦊',
+    '🦄',
+    '🐼',
+    '🐸',
+    '🐨',
+    '🐯',
   ];
 
   /// Compute cosine similarity between two double vectors.
@@ -56,36 +67,45 @@ class SpeakerService {
     required String defaultName,
   }) async {
     final uid = _currentUserId;
-    final allProfiles = await _isar.speakerProfileModels.filter().userIdEqualTo(uid).findAll();
-    
+    final allProfiles = await _isar.speakerProfileModels
+        .filter()
+        .userIdEqualTo(uid)
+        .findAll();
+
     SpeakerProfileModel? bestMatch;
     double bestScore = 0.0;
-    
+
     for (final profile in allProfiles) {
-      if (profile.voiceEmbedding != null && profile.voiceEmbedding!.isNotEmpty) {
-        final score = calculateCosineSimilarity(voiceEmbedding, profile.voiceEmbedding!);
+      if (profile.voiceEmbedding != null &&
+          profile.voiceEmbedding!.isNotEmpty) {
+        final score = calculateCosineSimilarity(
+          voiceEmbedding,
+          profile.voiceEmbedding!,
+        );
         if (score > bestScore) {
           bestScore = score;
           bestMatch = profile;
         }
       }
     }
-    
+
     // Threshold for voice match: 0.85 similarity
     if (bestMatch != null && bestScore >= 0.85) {
-      print("[SpeakerService] Matched voice with existing speaker profile: ${bestMatch.name} (score: $bestScore)");
+      print(
+        "[SpeakerService] Matched voice with existing speaker profile: ${bestMatch.name} (score: $bestScore)",
+      );
       bestMatch.meetingCount++;
       await _isar.writeTxn(() async {
         await _isar.speakerProfileModels.put(bestMatch!);
       });
       return bestMatch;
     }
-    
+
     // Otherwise, create a brand new profile
     final index = allProfiles.length;
     final randomEmoji = _defaultEmojis[index % _defaultEmojis.length];
     final randomColor = _defaultColors[index % _defaultColors.length];
-    
+
     final newProfile = SpeakerProfileModel()
       ..name = defaultName
       ..avatarEmoji = randomEmoji
@@ -94,28 +114,37 @@ class SpeakerService {
       ..meetingCount = 1
       ..createdAt = DateTime.now()
       ..userId = uid;
-      
+
     await _isar.writeTxn(() async {
       await _isar.speakerProfileModels.put(newProfile);
     });
-    
+
     print("[SpeakerService] Created new speaker profile: ${newProfile.name}");
     return newProfile;
   }
 
   /// Get or create a speaker profile by name fallback (if DSP offline).
-  Future<SpeakerProfileModel> getOrCreateSpeakerProfileByName(String name) async {
+  Future<SpeakerProfileModel> getOrCreateSpeakerProfileByName(
+    String name,
+  ) async {
     final uid = _currentUserId;
-    var profile = await _isar.speakerProfileModels.filter().userIdEqualTo(uid).nameEqualTo(name).findFirst();
+    var profile = await _isar.speakerProfileModels
+        .filter()
+        .userIdEqualTo(uid)
+        .nameEqualTo(name)
+        .findFirst();
     if (profile != null) {
       return profile;
     }
-    
-    final allProfiles = await _isar.speakerProfileModels.filter().userIdEqualTo(uid).findAll();
+
+    final allProfiles = await _isar.speakerProfileModels
+        .filter()
+        .userIdEqualTo(uid)
+        .findAll();
     final index = allProfiles.length;
     final randomEmoji = _defaultEmojis[index % _defaultEmojis.length];
     final randomColor = _defaultColors[index % _defaultColors.length];
-    
+
     profile = SpeakerProfileModel()
       ..name = name
       ..avatarEmoji = randomEmoji
@@ -123,7 +152,7 @@ class SpeakerService {
       ..meetingCount = 1
       ..createdAt = DateTime.now()
       ..userId = uid;
-      
+
     await _isar.writeTxn(() async {
       await _isar.speakerProfileModels.put(profile!);
     });
@@ -140,6 +169,9 @@ class SpeakerService {
 
   /// Fetch all speaker profiles.
   Future<List<SpeakerProfileModel>> getAllSpeakerProfiles() async {
-    return await _isar.speakerProfileModels.filter().userIdEqualTo(_currentUserId).findAll();
+    return await _isar.speakerProfileModels
+        .filter()
+        .userIdEqualTo(_currentUserId)
+        .findAll();
   }
 }

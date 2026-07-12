@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: meetingmind-emotion-api
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --timeout 120
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: BACKEND_ENV
+        value: production

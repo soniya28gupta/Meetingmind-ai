@@ -23,7 +23,8 @@ class GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final defaultColors = gradientColors ?? [AppColors.primary, AppColors.secondary];
+    final defaultColors =
+        gradientColors ?? [AppColors.primary, AppColors.secondary];
     final defaultRadius = borderRadius ?? BorderRadius.circular(12);
 
     return Container(
@@ -45,7 +46,7 @@ class GradientButton extends StatelessWidget {
                   color: defaultColors[0].withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
-                )
+                ),
               ]
             : null,
       ),
@@ -53,9 +54,9 @@ class GradientButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: isLoading ? null : onPressed,
-          borderRadius: BorderRadius.all(Radius.circular(
-            (defaultRadius as BorderRadius).topLeft.x,
-          )),
+          borderRadius: BorderRadius.all(
+            Radius.circular((defaultRadius as BorderRadius).topLeft.x),
+          ),
           child: Center(
             child: isLoading
                 ? const SizedBox(

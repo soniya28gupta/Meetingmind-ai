@@ -14,17 +14,23 @@ import '../features/settings/settings_provider.dart';
 final isarProvider = Provider((ref) => IsarDatabase.instance.isar);
 
 final dioProvider = Provider<Dio>((ref) {
-  return Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 20),
-    receiveTimeout: const Duration(seconds: 120),
-    sendTimeout: const Duration(seconds: 120),
-  ));
+  return Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 20),
+      receiveTimeout: const Duration(seconds: 120),
+      sendTimeout: const Duration(seconds: 120),
+    ),
+  );
 });
 
 // Services Providers
 final deepgramServiceProvider = Provider((ref) => DeepgramService());
-final openAIServiceProvider = Provider<OpenAIService>((ref) => OpenAIService(ref));
-final emotionServiceProvider = Provider<EmotionService>((ref) => EmotionService(ref));
+final openAIServiceProvider = Provider<OpenAIService>(
+  (ref) => OpenAIService(ref),
+);
+final emotionServiceProvider = Provider<EmotionService>(
+  (ref) => EmotionService(ref),
+);
 final audioRecordingServiceProvider = Provider((ref) {
   final service = AudioRecordingService();
   ref.onDispose(() => service.dispose());

@@ -10,7 +10,8 @@ class DeviceDiscoveryScreen extends ConsumerStatefulWidget {
   const DeviceDiscoveryScreen({super.key});
 
   @override
-  ConsumerState<DeviceDiscoveryScreen> createState() => _DeviceDiscoveryScreenState();
+  ConsumerState<DeviceDiscoveryScreen> createState() =>
+      _DeviceDiscoveryScreenState();
 }
 
 class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
@@ -42,10 +43,10 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
       case WearableDeviceType.xiaomiWatch:
       case WearableDeviceType.samsungWatch:
         return Icons.watch;
+      case WearableDeviceType.pixelWatch:
+        return Icons.watch_outlined;
       case WearableDeviceType.genericHeartRate:
         return Icons.favorite_border_rounded;
-      case WearableDeviceType.simulator:
-        return Icons.auto_awesome;
     }
   }
 
@@ -61,10 +62,10 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
         return 'Xiaomi Watch';
       case WearableDeviceType.samsungWatch:
         return 'Galaxy Watch';
+      case WearableDeviceType.pixelWatch:
+        return 'Pixel Watch';
       case WearableDeviceType.genericHeartRate:
-        return 'GATT Heart Rate Strap';
-      case WearableDeviceType.simulator:
-        return 'Developer Simulation';
+        return 'BLE Heart Rate Device';
     }
   }
 
@@ -84,12 +85,17 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pair Wearable Sensor', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Pair Wearable Sensor',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
           IconButton(
-            icon: Icon(state.isScanning ? Icons.stop_rounded : Icons.refresh_rounded),
+            icon: Icon(
+              state.isScanning ? Icons.stop_rounded : Icons.refresh_rounded,
+            ),
             onPressed: () {
               if (state.isScanning) {
                 ref.read(wearableProvider.notifier).stopScan();
@@ -101,9 +107,7 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
         ],
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.darkGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.darkGradient),
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Column(
@@ -125,7 +129,11 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                           shape: BoxShape.circle,
                           gradient: AppColors.primaryGradient,
                         ),
-                        child: const Icon(Icons.bluetooth_searching_rounded, color: Colors.white, size: 36),
+                        child: const Icon(
+                          Icons.bluetooth_searching_rounded,
+                          color: Colors.white,
+                          size: 36,
+                        ),
                       ),
                     ],
                   ),
@@ -134,7 +142,10 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                 const Text(
                   'Scanning for nearby BLE signals...',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 const SizedBox(height: 30),
               ] else ...[
@@ -153,11 +164,16 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.error.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Text(
                     state.errorMessage!,
-                    style: const TextStyle(color: AppColors.error, fontSize: 13),
+                    style: const TextStyle(
+                      color: AppColors.error,
+                      fontSize: 13,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -170,7 +186,10 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                         child: Text(
                           'No devices found yet.\nVerify Bluetooth and Location services are enabled.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textMuted, height: 1.5),
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            height: 1.5,
+                          ),
                         ),
                       )
                     : ListView.separated(
@@ -178,12 +197,19 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final device = state.discoveredDevices[index];
-                          final isConnecting = state.connectionState == DeviceConnectionState.connecting &&
-                                               state.connectedDevice?.id == device.id;
+                          final isConnecting =
+                              state.connectionState ==
+                                  DeviceConnectionState.connecting &&
+                              state.connectedDevice?.id == device.id;
 
                           return GlassCard(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            borderColor: device.type == WearableDeviceType.simulator
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            borderColor:
+                                device.type ==
+                                    WearableDeviceType.genericHeartRate
                                 ? AppColors.secondary.withValues(alpha: 0.4)
                                 : AppColors.surfaceLight,
                             child: ListTile(
@@ -191,22 +217,30 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                               leading: Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: (device.type == WearableDeviceType.simulator
-                                          ? AppColors.secondary
-                                          : AppColors.primary)
-                                      .withValues(alpha: 0.15),
+                                  color:
+                                      (device.type ==
+                                                  WearableDeviceType
+                                                      .genericHeartRate
+                                              ? AppColors.secondary
+                                              : AppColors.primary)
+                                          .withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
                                   _getDeviceIcon(device.type),
-                                  color: device.type == WearableDeviceType.simulator
+                                  color:
+                                      device.type ==
+                                          WearableDeviceType.genericHeartRate
                                       ? AppColors.secondary
                                       : AppColors.primary,
                                 ),
                               ),
                               title: Text(
                                 device.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
                               ),
                               subtitle: Padding(
                                 padding: const EdgeInsets.only(top: 4.0),
@@ -214,12 +248,25 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                                   children: [
                                     Text(
                                       _getDeviceTypeName(device.type),
-                                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                     const SizedBox(width: 10),
-                                    Icon(Icons.wifi_tethering, size: 12, color: _getRssiColor(device.rssi)),
+                                    Icon(
+                                      Icons.wifi_tethering,
+                                      size: 12,
+                                      color: _getRssiColor(device.rssi),
+                                    ),
                                     const SizedBox(width: 4),
-                                    Text('${device.rssi} dBm', style: TextStyle(color: _getRssiColor(device.rssi), fontSize: 11)),
+                                    Text(
+                                      '${device.rssi} dBm',
+                                      style: TextStyle(
+                                        color: _getRssiColor(device.rssi),
+                                        fontSize: 11,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -227,13 +274,20 @@ class _DeviceDiscoveryScreenState extends ConsumerState<DeviceDiscoveryScreen> {
                                   ? const SizedBox(
                                       width: 24,
                                       height: 24,
-                                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                      ),
                                     )
-                                  : Icon(Icons.chevron_right, color: AppColors.textMuted),
+                                  : Icon(
+                                      Icons.chevron_right,
+                                      color: AppColors.textMuted,
+                                    ),
                               onTap: isConnecting
                                   ? null
                                   : () {
-                                      ref.read(wearableProvider.notifier).connect(device);
+                                      ref
+                                          .read(wearableProvider.notifier)
+                                          .connect(device);
                                     },
                             ),
                           );

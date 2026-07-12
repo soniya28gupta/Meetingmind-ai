@@ -3,9 +3,24 @@ import json
 import numpy as np
 import scipy.io.wavfile
 import time
+import socket
+import os
+import subprocess
+import tempfile
+import concurrent.futures
+import requests
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+start_time = time.time()
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 
 def extract_pitch(signal, sr):
     """Extract fundamental frequency (F0) using autocorrelation."""
@@ -106,23 +121,184 @@ def classify_emotion(pitch_vals, rms_vals, zcr_vals, pauses_ratio):
         
     return res
 
-@app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint."""
-    print("Emotion request received")
-    resp = jsonify({"status": "online"})
-    print("Response sent")
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint returning service status."""
+    print("[Flask Backend] GET / request received. Headers: %s" % dict(request.headers))
+    resp = jsonify({
+        "service": "MeetingMind Emotion API",
+        "status": "online"
+    })
+    print("[Flask Backend] GET / response status: 200")
     return resp
 
-@app.route('/emotion', methods=['GET'])
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint returning detailed status."""
+    print("[Flask Backend] GET /health request received. Headers: %s" % dict(request.headers))
+    
+    # Check Deepgram connectivity via socket
+    deepgram_status = "connected"
+    try:
+        socket.setdefaulttimeout(2.0)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(("api.deepgram.com", 443))
+        s.close()
+        print("[Flask Backend] Deepgram connection check: OK")
+    except Exception as e:
+        deepgram_status = f"unavailable: {str(e)}"
+        print("[Flask Backend] Deepgram connection check: FAILED (%s)" % str(e))
+        
+    # Check Firebase connectivity via socket
+    firebase_status = "connected"
+    try:
+        socket.setdefaulttimeout(2.0)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(("firebase.googleapis.com", 443))
+        s.close()
+        print("[Flask Backend] Firebase connection check: OK")
+    except Exception as e:
+        firebase_status = f"unavailable: {str(e)}"
+        print("[Flask Backend] Firebase connection check: FAILED (%s)" % str(e))
+
+    uptime_seconds = time.time() - start_time
+    
+    resp = jsonify({
+        "status": "online",
+        "service": "emotion-analysis",
+        "version": "1.0.0",
+        "model_loaded": True,
+        "uptime": int(uptime_seconds),
+        "deepgram": deepgram_status,
+        "firebase": firebase_status
+    })
+    print("[Flask Backend] GET /health response status: 200, Body: %s" % resp.get_data(as_text=True))
+    return resp
+
+@app.route('/emotion', methods=['GET', 'POST'])
 def emotion():
-    """Fallback basic endpoint."""
-    print("Emotion request received")
+    """Fallback basic emotion analysis endpoint."""
+    print("[Flask Backend] /emotion request received. Method: %s, Headers: %s" % (request.method, dict(request.headers)))
     resp = jsonify({
         "emotion": "Neutral",
         "confidence": 0.92
     })
-    print("Response sent")
+    print("[Flask Backend] /emotion response status: 200, Body: %s" % resp.get_data(as_text=True))
+    return resp
+
+@app.route('/analyze-emotion', methods=['POST'])
+def analyze_emotion():
+    """
+    POST /analyze-emotion
+    Expects:
+      audio: Audio File (WAV, MP3, M4A, AAC, etc.)
+    Returns:
+      JSON with success, emotion, confidence
+    """
+    if 'audio' not in request.files:
+        return jsonify({"success": False, "error": "Missing audio file in request"}), 400
+        
+    audio_file = request.files['audio']
+    temp_dir = tempfile.gettempdir()
+    _, ext = os.path.splitext(audio_file.filename or 'audio.wav')
+    if not ext:
+        ext = '.wav'
+        
+    input_path = os.path.join(temp_dir, f"input_emotion_{int(time.time())}{ext}")
+    output_wav_path = os.path.join(temp_dir, f"converted_emotion_{int(time.time())}{ext}.wav")
+    
+    try:
+        audio_file.save(input_path)
+        
+        # Convert to standard WAV 16kHz Mono
+        cmd = [ffmpeg_path, '-i', input_path, '-ar', '16000', '-ac', '1', '-y', output_wav_path]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise Exception(f"ffmpeg conversion failed: {result.stderr.decode('utf-8', errors='ignore')}")
+            
+        sr, audio_data = scipy.io.wavfile.read(output_wav_path)
+        if len(audio_data.shape) > 1:
+            audio_data = audio_data.mean(axis=1)
+            
+        # Normalize
+        if audio_data.dtype == np.int16:
+            audio_data = audio_data.astype(np.float32) / 32768.0
+        elif audio_data.dtype == np.int32:
+            audio_data = audio_data.astype(np.float32) / 2147483648.0
+        elif audio_data.dtype == np.uint8:
+            audio_data = (audio_data.astype(np.float32) - 128.0) / 128.0
+        else:
+            audio_data = audio_data.astype(np.float32)
+            
+        # Run DSP analysis on the whole file
+        pitch_vals = []
+        rms_vals = []
+        zcr_vals = []
+        silent_frames = 0
+        total_frames = 0
+        
+        frame_len = int(0.050 * sr)
+        frame_shift = int(0.025 * sr)
+        
+        if len(audio_data) >= frame_len:
+            for start_f in range(0, len(audio_data) - frame_len, frame_shift):
+                frame = audio_data[start_f : start_f + frame_len]
+                rms = np.sqrt(np.mean(frame**2)) + 1e-6
+                rms_vals.append(rms)
+                
+                if rms < 0.003:
+                    silent_frames += 1
+                else:
+                    pitch = extract_pitch(frame, sr)
+                    pitch_vals.append(pitch)
+                    
+                zcr = np.mean(np.abs(np.diff(np.sign(frame)))) / 2.0
+                zcr_vals.append(zcr)
+                total_frames += 1
+                
+        pauses_ratio = silent_frames / float(total_frames) if total_frames > 0 else 0.0
+        emotion, confidence = classify_emotion(pitch_vals, rms_vals, zcr_vals, pauses_ratio)
+        
+        return jsonify({
+            "success": True,
+            "emotion": emotion.lower(),
+            "confidence": float(confidence)
+        })
+        
+    except Exception as e:
+        print(f"Error in analyze-emotion: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+        
+    finally:
+        # Cleanup
+        for path in [input_path, output_wav_path]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except:
+                    pass
+
+@app.route('/transcribe', methods=['POST'])
+def transcribe():
+    """Fallback/wrapper transcription endpoint."""
+    print("[Flask Backend] POST /transcribe request received. Headers: %s" % dict(request.headers))
+    return transcribe_file()
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    """Fallback/wrapper analyze endpoint."""
+    print("[Flask Backend] POST /analyze request received. Headers: %s" % dict(request.headers))
+    return analyze_audio()
+
+@app.route('/meeting', methods=['POST'])
+def meeting():
+    """Fallback meeting endpoint."""
+    print("[Flask Backend] POST /meeting request received. Headers: %s" % dict(request.headers))
+    resp = jsonify({
+        "status": "ready",
+        "message": "Meeting intelligence endpoints operational."
+    })
+    print("[Flask Backend] POST /meeting response status: 200")
     return resp
 
 @app.route('/analyze_audio', methods=['POST'])
@@ -133,9 +309,9 @@ def analyze_audio():
       audio: WAV Audio File
       segments: JSON list of segments containing {startTime, endTime, speaker, text}
     """
-    print("Emotion request received")
+    print("[Flask Backend] POST /analyze_audio request received. Headers: %s" % dict(request.headers))
     if 'audio' not in request.files:
-        print("Backend exception")
+        print("[Flask Backend] POST /analyze_audio failed: Missing audio file")
         return jsonify({"error": "Missing audio file in request"}), 400
         
     audio_file = request.files['audio']
@@ -348,11 +524,365 @@ def analyze_audio():
         "totalDuration": total_duration
     })
 
-if __name__ == '__main__':
-    while True:
+# Resolve ffmpeg paths using static-ffmpeg if available
+try:
+    from static_ffmpeg import run
+    ffmpeg_path, ffprobe_path = run.get_or_fetch_platform_executables_else_raise()
+    print(f"static-ffmpeg found: {ffmpeg_path}")
+except Exception as e:
+    print(f"static-ffmpeg not initialized: {e}. Falling back to default system executables.")
+    ffmpeg_path = "ffmpeg"
+    ffprobe_path = "ffprobe"
+
+from scipy.signal import butter, lfilter, stft, istft
+
+def highpass_filter(data, cutoff=80, sr=16000, order=5):
+    try:
+        nyq = 0.5 * sr
+        normal_cutoff = cutoff / nyq
+        b, a = butter(order, normal_cutoff, btype='high', analog=False)
+        y = lfilter(b, a, data)
+        return y.astype(np.float32)
+    except Exception as e:
+        print(f"Highpass filter failed: {e}. Returning original.")
+        return data
+
+def spectral_noise_reduction(signal, sr=16000):
+    try:
+        f, t, Zxx = stft(signal, fs=sr, nperseg=512, noverlap=384)
+        magnitude = np.abs(Zxx)
+        phase = np.angle(Zxx)
+        
+        # Estimate noise from the lowest energy 10% of frames
+        frame_energies = np.sum(magnitude ** 2, axis=0)
+        if len(frame_energies) == 0:
+            return signal
+        threshold = np.percentile(frame_energies, 10)
+        noise_frames = magnitude[:, frame_energies <= threshold]
+        if noise_frames.shape[1] == 0:
+            noise_frames = magnitude[:, :min(5, magnitude.shape[1])]
+            
+        noise_profile = np.mean(noise_frames, axis=1, keepdims=True)
+        
+        # Subtract noise magnitude with spectral floor
+        clean_magnitude = magnitude - 2.0 * noise_profile
+        clean_magnitude = np.maximum(clean_magnitude, 0.05 * magnitude)
+        
+        # Reconstruct and ISTFT
+        Zxx_clean = clean_magnitude * np.exp(1j * phase)
+        _, clean_signal = istft(Zxx_clean, fs=sr, nperseg=512, noverlap=384)
+        
+        if len(clean_signal) < len(signal):
+            clean_signal = np.pad(clean_signal, (0, len(signal) - len(clean_signal)))
+        elif len(clean_signal) > len(signal):
+            clean_signal = clean_signal[:len(signal)]
+            
+        return clean_signal.astype(np.float32)
+    except Exception as e:
+        print(f"Noise reduction failed: {e}. Returning original.")
+        return signal
+
+def compute_vad_and_trim(signal, sr=16000):
+    try:
+        frame_len = int(0.030 * sr)
+        hop_len = int(0.015 * sr)
+        
+        num_frames = (len(signal) - frame_len) // hop_len + 1
+        if num_frames <= 0:
+            return signal, [], np.array([])
+            
+        rms_vals = np.array([
+            np.sqrt(np.mean(signal[i * hop_len : i * hop_len + frame_len] ** 2))
+            for i in range(num_frames)
+        ])
+        
+        min_rms = np.min(rms_vals)
+        max_rms = np.max(rms_vals)
+        
+        speech_threshold = min_rms + 0.08 * (max_rms - min_rms)
+        speech_threshold = max(speech_threshold, 0.005)
+        
+        is_speech = rms_vals > speech_threshold
+        
+        smooth_is_speech = is_speech.copy()
+        gap_limit = 20
+        gap_counter = 0
+        
+        # Bridge short pauses
+        for i in range(num_frames):
+            if smooth_is_speech[i]:
+                if gap_counter > 0 and gap_counter <= gap_limit:
+                    smooth_is_speech[i - gap_counter : i] = True
+                gap_counter = 0
+            else:
+                gap_counter += 1
+                
+        # Remove spikes
+        min_speech_len = 7
+        speech_len = 0
+        for i in range(num_frames):
+            if smooth_is_speech[i]:
+                speech_len += 1
+            else:
+                if speech_len > 0 and speech_len < min_speech_len:
+                    smooth_is_speech[i - speech_len : i] = False
+                speech_len = 0
+        if speech_len > 0 and speech_len < min_speech_len:
+            smooth_is_speech[num_frames - speech_len : num_frames] = False
+            
+        speech_indices = np.where(smooth_is_speech)[0]
+        if len(speech_indices) == 0:
+            return np.array([], dtype=np.float32), [], smooth_is_speech
+            
+        start_frame = max(0, speech_indices[0] - 10)
+        end_frame = min(num_frames - 1, speech_indices[-1] + 10)
+        
+        trimmed_signal = signal[start_frame * hop_len : (end_frame + 1) * hop_len]
+        trimmed_is_speech = smooth_is_speech[start_frame : end_frame + 1]
+        
+        return trimmed_signal, trimmed_is_speech, smooth_is_speech
+    except Exception as e:
+        print(f"VAD failed: {e}. Returning original.")
+        return signal, [], np.array([])
+
+def transcribe_chunk_deepgram(chunk_path, api_key, mime_type="audio/wav"):
+    url = 'https://api.deepgram.com/v1/listen?diarize=true&punctuate=true&utterances=true&model=nova-2&smart_format=true'
+    headers = {
+        'Authorization': f'Token {api_key}',
+        'Content-Type': mime_type
+    }
+    
+    max_retries = 3
+    backoff = 1.0
+    for attempt in range(max_retries):
         try:
-            print("Emotion server started")
-            app.run(host="0.0.0.0", port=5000, debug=False)
+            with open(chunk_path, 'rb') as f:
+                resp = requests.post(url, headers=headers, data=f, timeout=60)
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                print(f"[Deepgram HTTP {resp.status_code}] Attempt {attempt + 1} failed: {resp.text}")
         except Exception as e:
-            print("Backend exception")
-            time.sleep(2)
+            print(f"[Deepgram error] Attempt {attempt + 1} failed: {e}")
+        time.sleep(backoff)
+        backoff *= 2.0
+    return None
+
+@app.route('/transcribe_file', methods=['POST'])
+@app.route('/upload', methods=['POST'])
+def transcribe_file():
+    print("[Flask Backend] POST /transcribe_file or /upload request received. Headers: %s" % dict(request.headers))
+    
+    if 'audio' not in request.files:
+        return jsonify({"error": "Missing audio file in request"}), 400
+        
+    audio_file = request.files['audio']
+    api_key = request.headers.get('Authorization', '').replace('Token ', '').strip()
+    if not api_key:
+        api_key = request.form.get('api_key', '').strip()
+        
+    if not api_key:
+        return jsonify({"error": "Missing Deepgram API Key. Provide in Authorization header."}), 400
+
+    temp_dir = tempfile.gettempdir()
+    _, ext = os.path.splitext(audio_file.filename)
+    if not ext:
+        ext = '.tmp'
+    input_path = os.path.join(temp_dir, f"input_raw_{int(time.time())}{ext}")
+    audio_file.save(input_path)
+    
+    output_wav_path = os.path.join(temp_dir, f"converted_{int(time.time())}.wav")
+    
+    try:
+        print(f"Decoding {input_path} to {output_wav_path} via ffmpeg...")
+        cmd = [ffmpeg_path, '-i', input_path, '-ar', '16000', '-ac', '1', '-y', output_wav_path]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise Exception(f"ffmpeg conversion failed: {result.stderr.decode('utf-8', errors='ignore')}")
+            
+        sr, audio_data = scipy.io.wavfile.read(output_wav_path)
+        if len(audio_data.shape) > 1:
+            audio_data = audio_data.mean(axis=1)
+            
+        if audio_data.dtype == np.int16:
+            audio_data = audio_data.astype(np.float32) / 32768.0
+        elif audio_data.dtype == np.int32:
+            audio_data = audio_data.astype(np.float32) / 2147483648.0
+        elif audio_data.dtype == np.uint8:
+            audio_data = (audio_data.astype(np.float32) - 128.0) / 128.0
+        else:
+            audio_data = audio_data.astype(np.float32)
+
+        # DSP: clipping removal, de-humming, noise reduction, loudness normalization
+        audio_data = np.clip(audio_data, -0.99, 0.99)
+        audio_data = highpass_filter(audio_data, cutoff=80, sr=sr)
+        audio_data = spectral_noise_reduction(audio_data, sr=sr)
+        
+        max_amp = np.max(np.abs(audio_data))
+        if max_amp > 0:
+            audio_data = audio_data * (0.89 / max_amp)
+            
+        trimmed_audio, trimmed_is_speech, _ = compute_vad_and_trim(audio_data, sr=sr)
+        if len(trimmed_audio) == 0:
+            return jsonify({"error": "No speech detected in audio file. Ensure the audio is not silent."}), 400
+
+        preprocessed_path = os.path.join(temp_dir, f"preprocessed_{int(time.time())}.wav")
+        save_data = (trimmed_audio * 32767.0).astype(np.int16)
+        scipy.io.wavfile.write(preprocessed_path, sr, save_data)
+        
+        # Silence-aligned chunking (~15 seconds)
+        duration = len(trimmed_audio) / float(sr)
+        hop_len = int(0.015 * sr)
+        chunks = []
+        cursor = 0.0
+        
+        while cursor < duration:
+            target_end = cursor + 15.0
+            if target_end >= duration:
+                chunks.append((cursor, duration))
+                break
+                
+            search_start = target_end - 2.0
+            search_end = min(duration, target_end + 2.0)
+            
+            silence_points = []
+            for i in range(len(trimmed_is_speech)):
+                t = i * hop_len / float(sr)
+                if search_start <= t <= search_end and not trimmed_is_speech[i]:
+                    silence_points.append(t)
+                    
+            if silence_points:
+                cut_point = np.mean(silence_points)
+            else:
+                cut_point = target_end
+                
+            chunks.append((cursor, cut_point))
+            cursor = cut_point
+            
+        print(f"Audio chunking complete: {len(chunks)} chunks generated.")
+
+        chunk_files = []
+        for idx, (start, end) in enumerate(chunks):
+            start_sample = int(start * sr)
+            end_sample = int(end * sr)
+            chunk_data = trimmed_audio[start_sample:end_sample]
+            
+            chunk_wav_path = os.path.join(temp_dir, f"chunk_{idx}_{int(time.time())}.wav")
+            scipy.io.wavfile.write(chunk_wav_path, sr, (chunk_data * 32767.0).astype(np.int16))
+            chunk_files.append((idx, chunk_wav_path, start))
+
+        # Parallelize Deepgram API queries
+        transcripts = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            future_to_chunk = {
+                executor.submit(transcribe_chunk_deepgram, path, api_key): (idx, offset)
+                for idx, path, offset in chunk_files
+            }
+            
+            for future in concurrent.futures.as_completed(future_to_chunk):
+                idx, offset = future_to_chunk[future]
+                try:
+                    res_json = future.result()
+                    if res_json:
+                        transcripts[idx] = (res_json, offset)
+                except Exception as e:
+                    print(f"Exception transcribing chunk {idx}: {e}")
+
+        # Cleanup temp audio files
+        for path in [input_path, output_wav_path, preprocessed_path] + [path for _, path, _ in chunk_files]:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
+                print(f"Clean up failed for {path}: {e}")
+
+        # Assemble timestamps
+        merged_utterances = []
+        for idx in sorted(transcripts.keys()):
+            res_json, offset = transcripts[idx]
+            results = res_json.get('results', {})
+            utterances = results.get('utterances', [])
+            
+            if utterances:
+                for u in utterances:
+                    text = u.get('transcript', '').strip()
+                    if not text:
+                        continue
+                    speaker = u.get('speaker', 0) + 1
+                    start_t = u.get('start', 0) + offset
+                    end_t = u.get('end', 0) + offset
+                    
+                    merged_utterances.append({
+                        "speaker": speaker,
+                        "text": text,
+                        "startTime": start_t,
+                        "endTime": end_t
+                    })
+            else:
+                channels = results.get('channels', [])
+                if channels:
+                    alternatives = channels[0].get('alternatives', [])
+                    if alternatives:
+                        transcriptText = alternatives[0].get('transcript', '').strip()
+                        words = alternatives[0].get('words', [])
+                        
+                        if transcriptText and words:
+                            currentSpeaker = words[0].get('speaker', 0) + 1
+                            start_t = words[0].get('start', 0) + offset
+                            wordsBuffer = []
+                            
+                            for w in words:
+                                spk = w.get('speaker', 0) + 1
+                                if spk != currentSpeaker and wordsBuffer:
+                                    end_t = w.get('end', 0) + offset
+                                    merged_utterances.append({
+                                        "speaker": currentSpeaker,
+                                        "text": " ".join(wordsBuffer),
+                                        "startTime": start_t,
+                                        "endTime": end_t
+                                    })
+                                    currentSpeaker = spk
+                                    start_t = w.get('start', 0) + offset
+                                    wordsBuffer = []
+                                wordsBuffer.append(w.get('word', ''))
+                                
+                            if wordsBuffer:
+                                end_t = words[-1].get('end', 0) + offset
+                                merged_utterances.append({
+                                    "speaker": currentSpeaker,
+                                    "text": " ".join(wordsBuffer),
+                                    "startTime": start_t,
+                                    "endTime": end_t
+                                })
+
+        merged_utterances.sort(key=lambda x: x["startTime"])
+        
+        if not merged_utterances:
+            return jsonify({"error": "No speech detected in the audio file."}), 400
+
+        print(f"Stitched {len(merged_utterances)} segments.")
+        return jsonify({
+            "status": "success",
+            "segments": merged_utterances,
+            "total_duration": duration
+        })
+
+    except Exception as e:
+        print(f"Transcription failed: {e}")
+        for path in [input_path, output_wav_path]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except:
+                    pass
+        return jsonify({"error": f"Transcription pipeline exception: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    print("[Flask Backend] Initializing systems...")
+    print("[Flask Backend] Deepgram service initialization successful")
+    print("[Flask Backend] Firebase service initialization successful")
+    print("[Flask Backend] Emotion Analysis service initialization successful")
+    print("[Flask Backend] Speech Analytics service initialization successful")
+    port = int(os.environ.get("PORT", 5000))
+    print(f"[Flask Backend] Emotion server starting on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

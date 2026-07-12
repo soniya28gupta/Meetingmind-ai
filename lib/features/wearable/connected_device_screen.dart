@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/gradient_button.dart';
-import 'wearable_models.dart';
 import 'wearable_provider.dart';
 
 class ConnectedDeviceScreen extends ConsumerWidget {
@@ -24,14 +23,15 @@ class ConnectedDeviceScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Wearable Control Center', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Wearable Control Center',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.darkGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.darkGradient),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
           child: Column(
@@ -49,9 +49,7 @@ class ConnectedDeviceScreen extends ConsumerWidget {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        device.type == WearableDeviceType.simulator
-                            ? Icons.auto_awesome
-                            : Icons.watch_rounded,
+                        Icons.bluetooth_connected_rounded,
                         color: AppColors.primary,
                         size: 48,
                       ),
@@ -59,7 +57,10 @@ class ConnectedDeviceScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                     Text(
                       device.name,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 6),
@@ -77,7 +78,11 @@ class ConnectedDeviceScreen extends ConsumerWidget {
                         const SizedBox(width: 8),
                         const Text(
                           'Connected',
-                          style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600, fontSize: 13),
+                          style: TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),
@@ -95,15 +100,30 @@ class ConnectedDeviceScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Battery', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          const Text(
+                            'Phone Battery',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Icon(Icons.battery_5_bar_rounded, color: AppColors.success, size: 20),
+                              const Icon(
+                                Icons.battery_5_bar_rounded,
+                                color: AppColors.success,
+                                size: 20,
+                              ),
                               const SizedBox(width: 6),
                               Text(
-                                '${liveData.battery}%',
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                state.phoneMetrics != null
+                                    ? '${state.phoneMetrics!.batteryLevel}%'
+                                    : '--',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
@@ -118,15 +138,28 @@ class ConnectedDeviceScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Signal (RSSI)', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          const Text(
+                            'Signal (RSSI)',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Icon(Icons.wifi_tethering, color: AppColors.secondary, size: 20),
+                              const Icon(
+                                Icons.wifi_tethering,
+                                color: AppColors.secondary,
+                                size: 20,
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 '${device.rssi} dBm',
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
@@ -148,7 +181,10 @@ class ConnectedDeviceScreen extends ConsumerWidget {
               ),
 
               GlassCard(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Column(
                   children: [
                     _buildTelemetryTile(
@@ -232,7 +268,11 @@ class ConnectedDeviceScreen extends ConsumerWidget {
         ),
         Text(
           value,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'monospace'),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            fontFamily: 'monospace',
+          ),
         ),
       ],
     );

@@ -12,13 +12,18 @@ abstract class AuthRepository {
   Stream<UserModel?> get onAuthStateChanged;
   UserModel? get currentUser;
   Future<UserModel> signInWithEmailAndPassword(String email, String password);
-  Future<UserModel> signUpWithEmailAndPassword(String email, String password, String displayName);
+  Future<UserModel> signUpWithEmailAndPassword(
+    String email,
+    String password,
+    String displayName,
+  );
   Future<UserModel> signInWithGoogle();
   Future<void> signOut();
 }
 
 class FirebaseAuthRepository implements AuthRepository {
-  final StreamController<UserModel?> _localAuthStreamController = StreamController<UserModel?>.broadcast();
+  final StreamController<UserModel?> _localAuthStreamController =
+      StreamController<UserModel?>.broadcast();
 
   FirebaseAuthRepository() {
     FirebaseAuth.instance.authStateChanges().listen((firebaseUser) async {
@@ -33,7 +38,9 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Stream<UserModel?> get onAuthStateChanged {
-    return FirebaseAuth.instance.authStateChanges().asyncMap((firebaseUser) async {
+    return FirebaseAuth.instance.authStateChanges().asyncMap((
+      firebaseUser,
+    ) async {
       if (firebaseUser == null) return null;
       return await _getLocalUser(firebaseUser.uid);
     });
@@ -43,13 +50,19 @@ class FirebaseAuthRepository implements AuthRepository {
   UserModel? get currentUser {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null) return null;
-    
+
     final isar = IsarDatabase.instance.isar;
-    return isar.userModels.filter().uidEqualTo(firebaseUser.uid).findFirstSync();
+    return isar.userModels
+        .filter()
+        .uidEqualTo(firebaseUser.uid)
+        .findFirstSync();
   }
 
   @override
-  Future<UserModel> signInWithEmailAndPassword(String email, String password) async {
+  Future<UserModel> signInWithEmailAndPassword(
+    String email,
+    String password,
+  ) async {
     final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
       email: email,
       password: password,
@@ -66,14 +79,12 @@ class FirebaseAuthRepository implements AuthRepository {
     String password,
     String displayName,
   ) async {
-    final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    final credential = await FirebaseAuth.instance
+        .createUserWithEmailAndPassword(email: email, password: password);
     if (credential.user == null) {
       throw Exception('Registration failed: User is null');
     }
-    
+
     await credential.user!.updateDisplayName(displayName);
     await credential.user!.reload();
     final updatedUser = FirebaseAuth.instance.currentUser ?? credential.user!;
@@ -83,9 +94,13 @@ class FirebaseAuthRepository implements AuthRepository {
   @override
   Future<UserModel> signInWithGoogle() async {
     debugPrint('[AuthRepository] Google Sign-In Started');
-    final String? serverClientId = EnvConfig.googleWebClientId.isNotEmpty ? EnvConfig.googleWebClientId : null;
-    final GoogleSignIn googleSignIn = GoogleSignIn(serverClientId: serverClientId);
-    
+    final String? serverClientId = EnvConfig.googleWebClientId.isNotEmpty
+        ? EnvConfig.googleWebClientId
+        : null;
+    final GoogleSignIn googleSignIn = GoogleSignIn(
+      serverClientId: serverClientId,
+    );
+
     try {
       await googleSignIn.signOut();
     } catch (e) {
@@ -98,14 +113,16 @@ class FirebaseAuthRepository implements AuthRepository {
     }
     debugPrint('[AuthRepository] Google Account Selected: ${googleUser.email}');
 
-    final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+    final GoogleSignInAuthentication googleAuth =
+        await googleUser.authentication;
     final AuthCredential credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
     debugPrint('[AuthRepository] Firebase Credential Created');
 
-    final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+    final UserCredential userCredential = await FirebaseAuth.instance
+        .signInWithCredential(credential);
     if (userCredential.user == null) {
       throw Exception('Google Sign In failed to authenticate with Firebase');
     }
@@ -117,8 +134,12 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() async {
-    final String? serverClientId = EnvConfig.googleWebClientId.isNotEmpty ? EnvConfig.googleWebClientId : null;
-    final GoogleSignIn googleSignIn = GoogleSignIn(serverClientId: serverClientId);
+    final String? serverClientId = EnvConfig.googleWebClientId.isNotEmpty
+        ? EnvConfig.googleWebClientId
+        : null;
+    final GoogleSignIn googleSignIn = GoogleSignIn(
+      serverClientId: serverClientId,
+    );
     try {
       await googleSignIn.signOut();
     } catch (_) {}
@@ -130,7 +151,7 @@ class FirebaseAuthRepository implements AuthRepository {
     final isar = IsarDatabase.instance.isar;
     var user = await isar.userModels.filter().uidEqualTo(uid).findFirst();
     if (user != null) return user;
-    
+
     final profileSnap = await FirestoreService.instance.getUserProfile(uid);
     user = UserModel()..uid = uid;
     if (profileSnap != null && profileSnap.exists) {
@@ -149,7 +170,7 @@ class FirebaseAuthRepository implements AuthRepository {
       user.displayName = FirebaseAuth.instance.currentUser?.displayName;
       user.photoUrl = FirebaseAuth.instance.currentUser?.photoURL;
     }
-    
+
     await isar.writeTxn(() async {
       await isar.userModels.put(user!);
     });
@@ -158,25 +179,34 @@ class FirebaseAuthRepository implements AuthRepository {
 
   Future<UserModel> _syncLocalUser(User firebaseUser) async {
     final isar = IsarDatabase.instance.isar;
-    
-    var localUser = await isar.userModels.filter().uidEqualTo(firebaseUser.uid).findFirst();
+
+    var localUser = await isar.userModels
+        .filter()
+        .uidEqualTo(firebaseUser.uid)
+        .findFirst();
     localUser ??= UserModel()..uid = firebaseUser.uid;
-    
+
     localUser.email = firebaseUser.email;
-    localUser.displayName = firebaseUser.displayName ?? firebaseUser.email?.split('@').first;
+    localUser.displayName =
+        firebaseUser.displayName ?? firebaseUser.email?.split('@').first;
     localUser.photoUrl = firebaseUser.photoURL;
     localUser.lastSynced = DateTime.now();
 
-    final doc = await FirestoreService.instance.getUserProfile(firebaseUser.uid);
+    final doc = await FirestoreService.instance.getUserProfile(
+      firebaseUser.uid,
+    );
     if (doc != null && doc.exists) {
       final data = doc.data();
       if (data != null) {
-        localUser.displayName = data['displayName'] as String? ?? localUser.displayName;
+        localUser.displayName =
+            data['displayName'] as String? ?? localUser.displayName;
         localUser.photoUrl = data['photoUrl'] as String? ?? localUser.photoUrl;
-        localUser.phoneNumber = data['phoneNumber'] as String? ?? localUser.phoneNumber;
+        localUser.phoneNumber =
+            data['phoneNumber'] as String? ?? localUser.phoneNumber;
         localUser.bio = data['bio'] as String? ?? localUser.bio;
         localUser.company = data['company'] as String? ?? localUser.company;
-        localUser.designation = data['designation'] as String? ?? localUser.designation;
+        localUser.designation =
+            data['designation'] as String? ?? localUser.designation;
       }
     } else {
       await FirestoreService.instance.saveUserProfile(firebaseUser.uid, {

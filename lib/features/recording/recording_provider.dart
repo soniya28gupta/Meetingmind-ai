@@ -10,11 +10,22 @@ import '../../core/config/deepgram_debug.dart';
 import '../../services/speaker_service.dart';
 import '../../services/ollama_connection_manager.dart';
 import '../../services/emotion_health_service.dart';
-import '../wearable/wearable_provider.dart';
-import '../wearable/wearable_service.dart';
+import '../wearable/providers/wearable_provider.dart';
+import '../wearable/wearables/wearable_service.dart';
 import '../wearable/wearable_models.dart';
+import '../../providers/transcript_provider.dart';
+import '../../services/meeting_ai_service.dart';
 
-enum RecordingStatus { idle, connecting, recording, paused, stopped, processing, completed, error }
+enum RecordingStatus {
+  idle,
+  connecting,
+  recording,
+  paused,
+  stopped,
+  processing,
+  completed,
+  error,
+}
 
 class RecordingState {
   final RecordingStatus status;
@@ -22,6 +33,8 @@ class RecordingState {
   final List<TranscriptSegmentModel> liveSegments;
   final int secondsElapsed;
   final String? errorMessage;
+  final List<double> volumeHistory;
+  final double currentVolume;
 
   RecordingState({
     required this.status,
@@ -29,6 +42,8 @@ class RecordingState {
     this.liveSegments = const [],
     this.secondsElapsed = 0,
     this.errorMessage,
+    this.volumeHistory = const [],
+    this.currentVolume = 0.0,
   });
 
   RecordingState copyWith({
@@ -37,6 +52,8 @@ class RecordingState {
     List<TranscriptSegmentModel>? liveSegments,
     int? secondsElapsed,
     String? errorMessage,
+    List<double>? volumeHistory,
+    double? currentVolume,
   }) {
     return RecordingState(
       status: status ?? this.status,
@@ -44,6 +61,8 @@ class RecordingState {
       liveSegments: liveSegments ?? this.liveSegments,
       secondsElapsed: secondsElapsed ?? this.secondsElapsed,
       errorMessage: errorMessage ?? this.errorMessage,
+      volumeHistory: volumeHistory ?? this.volumeHistory,
+      currentVolume: currentVolume ?? this.currentVolume,
     );
   }
 }
@@ -51,6 +70,7 @@ class RecordingState {
 class RecordingNotifier extends StateNotifier<RecordingState> {
   final Ref _ref;
   StreamSubscription<List<int>>? _audioSubscription;
+  StreamSubscription<double>? _volumeSubscription;
   StreamSubscription<TranscriptSegmentModel>? _transcriptSubscription;
   Timer? _timer;
   Timer? _keepAliveTimer;
@@ -62,7 +82,8 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   List<double> _meetingStressScores = [];
   StreamSubscription<LiveSensorData>? _meetingSensorSubscription;
 
-  RecordingNotifier(this._ref) : super(RecordingState(status: RecordingStatus.idle));
+  RecordingNotifier(this._ref)
+    : super(RecordingState(status: RecordingStatus.idle));
 
   void reset() {
     _timer?.cancel();
@@ -79,7 +100,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
         state.status == RecordingStatus.processing) {
       return;
     }
-    
+
     state = RecordingState(status: RecordingStatus.connecting);
 
     try {
@@ -88,7 +109,11 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       final key = settings.deepgramKey;
       logDeepgramKeyDebug(key, source: 'recording_provider.startMeeting');
       if (key.isEmpty) {
-        state = RecordingState(status: RecordingStatus.error, errorMessage: 'Deepgram API Key is missing. Configure it in settings.');
+        state = RecordingState(
+          status: RecordingStatus.error,
+          errorMessage:
+              'Deepgram API Key is missing. Configure it in settings.',
+        );
         return;
       }
 
@@ -102,11 +127,15 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       final meetingRepo = _ref.read(meetingRepositoryProvider);
       final meeting = await meetingRepo.createMeeting(title);
 
+      _ref.read(transcriptProvider.notifier).setMeetingId(meeting.id);
+
       state = RecordingState(
         status: RecordingStatus.recording,
         activeMeeting: meeting,
         liveSegments: [],
         secondsElapsed: 0,
+        volumeHistory: [],
+        currentVolume: 0.0,
       );
 
       // Wearable Biometric Streaming Sync
@@ -115,10 +144,15 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       _meetingSensorSubscription?.cancel();
       final wearableState = _ref.read(wearableProvider);
       if (wearableState.connectionState == DeviceConnectionState.connected) {
-        _meetingSensorSubscription = WearableService().liveSensorDataStream.listen((data) {
-          _meetingHeartRates.add(data.heartRate);
-          _meetingStressScores.add(data.stress);
-        });
+        _meetingSensorSubscription = WearableService().liveSensorDataStream
+            .listen((data) {
+              if (data.heartRate != null) {
+                _meetingHeartRates.add(data.heartRate!);
+              }
+              if (data.stress != null) {
+                _meetingStressScores.add(data.stress!);
+              }
+            });
       }
 
       _audioSubscription = audioService.audioStream.listen(
@@ -127,16 +161,32 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
         },
         onError: (err) {
           print("[RecordingNotifier] Microphone stream error: $err");
-          state = RecordingState(status: RecordingStatus.error, errorMessage: 'Microphone stream error: $err');
+          state = RecordingState(
+            status: RecordingStatus.error,
+            errorMessage: 'Microphone stream error: $err',
+          );
           stopMeeting(cancel: true);
         },
       );
 
+      _volumeSubscription = audioService.volumeStream.listen((volume) {
+        if (state.status == RecordingStatus.recording) {
+          final history = List<double>.from(state.volumeHistory);
+          history.add(volume);
+          if (history.length > 25) {
+            history.removeAt(0);
+          }
+          state = state.copyWith(currentVolume: volume, volumeHistory: history);
+        }
+      });
+
       _transcriptSubscription = deepgramService.segmentStream.listen(
         (segment) async {
           if (state.status == RecordingStatus.recording) {
-            await meetingRepo.addTranscriptSegment(meeting.id, segment);
-            
+            _ref
+                .read(transcriptProvider.notifier)
+                .handleRawSegment(segment, meeting.id);
+
             state = state.copyWith(
               liveSegments: [...state.liveSegments, segment],
             );
@@ -146,13 +196,19 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
         },
         onError: (err) {
           print("[RecordingNotifier] Deepgram stream error: $err");
-          state = RecordingState(status: RecordingStatus.error, errorMessage: 'Deepgram connection error: $err');
+          state = RecordingState(
+            status: RecordingStatus.error,
+            errorMessage: 'Deepgram connection error: $err',
+          );
           stopMeeting(cancel: true);
         },
         onDone: () {
           print("[RecordingNotifier] Deepgram stream done");
           if (state.status == RecordingStatus.recording) {
-            state = RecordingState(status: RecordingStatus.error, errorMessage: 'Deepgram connection closed unexpectedly.');
+            state = RecordingState(
+              status: RecordingStatus.error,
+              errorMessage: 'Deepgram connection closed unexpectedly.',
+            );
             stopMeeting(cancel: true);
           }
         },
@@ -161,10 +217,12 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         state = state.copyWith(secondsElapsed: audioService.secondsElapsed);
       });
-
     } catch (e) {
       await stopMeeting(cancel: true);
-      state = RecordingState(status: RecordingStatus.error, errorMessage: e.toString());
+      state = RecordingState(
+        status: RecordingStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -189,11 +247,13 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
     _keepAliveTimer = null;
 
     await _ref.read(audioRecordingServiceProvider).resumeRecording();
-    
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      state = state.copyWith(secondsElapsed: _ref.read(audioRecordingServiceProvider).secondsElapsed);
+      state = state.copyWith(
+        secondsElapsed: _ref.read(audioRecordingServiceProvider).secondsElapsed,
+      );
     });
-    
+
     state = state.copyWith(status: RecordingStatus.recording);
   }
 
@@ -201,19 +261,23 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
     if (state.status == RecordingStatus.idle) return;
 
     final meeting = state.activeMeeting;
-    
+
     _timer?.cancel();
     _timer = null;
     _keepAliveTimer?.cancel();
     _keepAliveTimer = null;
     await _audioSubscription?.cancel();
     _audioSubscription = null;
+    await _volumeSubscription?.cancel();
+    _volumeSubscription = null;
     await _transcriptSubscription?.cancel();
     _transcriptSubscription = null;
     _meetingSensorSubscription?.cancel();
     _meetingSensorSubscription = null;
 
-    final finalAudioPath = await _ref.read(audioRecordingServiceProvider).stopRecording();
+    final finalAudioPath = await _ref
+        .read(audioRecordingServiceProvider)
+        .stopRecording();
     await _ref.read(deepgramServiceProvider).disconnect();
 
     final hasError = state.status == RecordingStatus.error;
@@ -234,7 +298,10 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
 
     try {
       final meetingRepo = _ref.read(meetingRepositoryProvider);
-      
+
+      // Flush any pending raw transcript segments to Isar
+      await _ref.read(transcriptProvider.notifier).flush();
+
       // Calculate Biometrics Averages if data exists
       double? hrAvg;
       double? hrPeak;
@@ -242,18 +309,25 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       double? sleepScoreVal;
       double? engagementVal;
       double? energyVal;
-      
+
       if (_meetingHeartRates.isNotEmpty) {
-        hrAvg = _meetingHeartRates.reduce((a, b) => a + b) / _meetingHeartRates.length;
-        hrPeak = _meetingHeartRates.map((e) => e.toDouble()).reduce((a, b) => a > b ? a : b);
+        hrAvg =
+            _meetingHeartRates.reduce((a, b) => a + b) /
+            _meetingHeartRates.length;
+        hrPeak = _meetingHeartRates
+            .map((e) => e.toDouble())
+            .reduce((a, b) => a > b ? a : b);
       }
       if (_meetingStressScores.isNotEmpty) {
-        stressAvg = _meetingStressScores.reduce((a, b) => a + b) / _meetingStressScores.length;
+        stressAvg =
+            _meetingStressScores.reduce((a, b) => a + b) /
+            _meetingStressScores.length;
       }
 
       if (hrAvg != null && stressAvg != null) {
         sleepScoreVal = 82.0; // Benchmark sleep baseline
-        engagementVal = (100.0 - (stressAvg * 0.5) - (hrAvg - 70).abs().clamp(0.0, 30.0));
+        engagementVal =
+            (100.0 - (stressAvg * 0.5) - (hrAvg - 70).abs().clamp(0.0, 30.0));
         energyVal = (state.secondsElapsed / 60.0) * (hrAvg / 70.0) * 1.5;
       }
 
@@ -272,37 +346,45 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       // Run Speaker Intelligence first to extract identities and emotions
       await _runSpeakerIntelligenceFlow(meeting.id, finalAudioPath);
 
+      // Post-process raw streaming segments: merge, grammar-correct, sentence-split
+      await _postProcessAndReplaceSegments(meeting.id);
+
       final updatedMeeting = await meetingRepo.getMeetingById(meeting.id);
       final transcriptObj = updatedMeeting?.transcript.value;
-      final segments = transcriptObj != null ? transcriptObj.segments.toList() : <TranscriptSegmentModel>[];
-      
-      final fullTranscriptText = segments.map((e) {
-        final speakerName = e.speakerProfile.value?.name ?? 'Speaker ${e.speaker}';
-        return '$speakerName: ${e.text}';
-      }).join('\n');
+      final segments = transcriptObj != null
+          ? transcriptObj.segments.toList()
+          : <TranscriptSegmentModel>[];
+
+      final fullTranscriptText = segments
+          .map((e) {
+            final speakerName =
+                e.speakerProfile.value?.name ?? 'Speaker ${e.speaker}';
+            return '$speakerName: ${e.text}';
+          })
+          .join('\n');
 
       if (fullTranscriptText.trim().isNotEmpty) {
-        final openAiService = _ref.read(openAIServiceProvider);
-
-        final analysis = await openAiService.generateMeetingAnalysis(
-          fullTranscript: fullTranscriptText,
-        );
+        final analysis = await _ref
+            .read(meetingAiServiceProvider)
+            .generateMeetingAnalysis(fullTranscriptText);
 
         // Generate Biometric Analyses if wearable telemetry is active
         if (hrAvg != null && stressAvg != null && hrPeak != null) {
+          final openAiService = _ref.read(openAIServiceProvider);
           final bioAnalysis = await openAiService.generateBiometricAnalysis(
             heartRateAverage: hrAvg,
             heartRatePeak: hrPeak,
             stressAverage: stressAvg,
             transcript: fullTranscriptText,
           );
-          
+
           meeting.stressAnalysis = bioAnalysis['stressAnalysis'];
           meeting.engagementAnalysis = bioAnalysis['engagementAnalysis'];
           meeting.focusAnalysis = bioAnalysis['focusAnalysis'];
           meeting.energyAnalysis = bioAnalysis['energyAnalysis'];
-          meeting.wellnessInsightText = 'Stress: ${meeting.stressAnalysis}\nEngagement: ${meeting.engagementAnalysis}';
-          
+          meeting.wellnessInsightText =
+              'Stress: ${meeting.stressAnalysis}\nEngagement: ${meeting.engagementAnalysis}';
+
           await meetingRepo.updateMeeting(meeting);
         }
 
@@ -316,7 +398,8 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
         await NotificationService().showNotification(
           id: meeting.id,
           title: 'Meeting Summary Ready',
-          body: '"${meeting.title}" analysis completed. Tasks and summary generated!',
+          body:
+              '"${meeting.title}" analysis completed. Tasks and summary generated!',
         );
       }
 
@@ -349,16 +432,16 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
         final transcript = meeting.transcript.value;
         if (transcript == null) break;
 
-        final fullTranscriptText = transcript.segments.toList()
+        final fullTranscriptText = transcript.segments
+            .toList()
             .map((e) => 'Speaker ${e.speaker}: ${e.text}')
             .join('\n');
 
         if (fullTranscriptText.trim().isEmpty) break;
 
-        final openAiService = _ref.read(openAIServiceProvider);
-        final analysis = await openAiService.generateMeetingAnalysis(
-          fullTranscript: fullTranscriptText,
-        );
+        final analysis = await _ref
+            .read(meetingAiServiceProvider)
+            .generateMeetingAnalysis(fullTranscriptText);
 
         await meetingRepo.saveSummaryAndActionItems(
           meeting.id,
@@ -381,12 +464,16 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   }
 
   Future<void> regenerateSummary(int meetingId) async {
-    print("[AI Summary flow] regenerateSummary started for meeting ID: $meetingId");
+    print(
+      "[AI Summary flow] regenerateSummary started for meeting ID: $meetingId",
+    );
     try {
       final meetingRepo = _ref.read(meetingRepositoryProvider);
       final meeting = await meetingRepo.getMeetingById(meetingId);
       if (meeting == null) {
-        print("[AI Summary flow ERROR] Meeting not found in database for ID: $meetingId");
+        print(
+          "[AI Summary flow ERROR] Meeting not found in database for ID: $meetingId",
+        );
         throw Exception('Meeting not found in database.');
       }
 
@@ -395,35 +482,53 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
 
       // 1. Get transcript text with speaker names
       final transcript = meeting.transcript.value;
-      final segments = transcript != null ? transcript.segments.toList() : <TranscriptSegmentModel>[];
-      final fullTranscriptText = segments.map((e) {
-        final speakerName = e.speakerProfile.value?.name ?? 'Speaker ${e.speaker}';
-        return '$speakerName: ${e.text}';
-      }).join('\n');
-      print("[AI Summary flow] Transcript text length: ${fullTranscriptText.length}");
+      final segments = transcript != null
+          ? transcript.segments.toList()
+          : <TranscriptSegmentModel>[];
+      final fullTranscriptText = segments
+          .map((e) {
+            final speakerName =
+                e.speakerProfile.value?.name ?? 'Speaker ${e.speaker}';
+            return '$speakerName: ${e.text}';
+          })
+          .join('\n');
+      print(
+        "[AI Summary flow] Transcript text length: ${fullTranscriptText.length}",
+      );
 
       // 2. Verify transcript is not empty
       if (fullTranscriptText.trim().isEmpty) {
-        print("[AI Summary flow ERROR] Transcript is empty. Cannot generate summary.");
-        throw Exception('Transcript is empty. Speak or import audio to generate a transcript first.');
+        print(
+          "[AI Summary flow ERROR] Transcript is empty. Cannot generate summary.",
+        );
+        throw Exception(
+          'Transcript is empty. Speak or import audio to generate a transcript first.',
+        );
       }
 
       // 3. Verify Ollama connectivity
       print("[AI Summary flow] Checking Ollama health connectivity...");
-      final connState = await _ref.read(ollamaConnectionManagerProvider.notifier).verifyHealth();
+      final connState = await _ref
+          .read(ollamaConnectionManagerProvider.notifier)
+          .verifyHealth();
       print("[AI Summary flow] Ollama connection state: ${connState.status}");
       if (connState.status == OllamaConnectionStatus.offline) {
-        throw Exception('Ollama Offline (connection refused)\nDetails: ${connState.errorMessage ?? 'Connection refused.'}');
+        throw Exception(
+          'Ollama Offline (connection refused)\nDetails: ${connState.errorMessage ?? 'Connection refused.'}',
+        );
       } else if (connState.status == OllamaConnectionStatus.waitingForOllama) {
-        throw Exception('Ollama Waiting (model missing)\nDetails: ${connState.errorMessage ?? 'Model missing.'}');
+        throw Exception(
+          'Ollama Waiting (model missing)\nDetails: ${connState.errorMessage ?? 'Model missing.'}',
+        );
       }
 
-      // 5. Generate analysis via OpenAIService
-      print("[AI Summary flow] Generating analysis (summary, tasks, decisions) from Ollama...");
-      final openAiService = _ref.read(openAIServiceProvider);
-      final analysis = await openAiService.generateMeetingAnalysis(
-        fullTranscript: fullTranscriptText,
+      // 5. Generate analysis via MeetingAIService
+      print(
+        "[AI Summary flow] Generating analysis (summary, tasks, decisions) from LLM...",
       );
+      final analysis = await _ref
+          .read(meetingAiServiceProvider)
+          .generateMeetingAnalysis(fullTranscriptText);
       print("[AI Summary flow] Analysis generation completed successfully.");
 
       // 6. Save summary, action items and decisions
@@ -448,19 +553,114 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
     }
   }
 
+  /// Post-processes real-time streaming transcript segments after a recording ends.
+  /// Merges consecutive same-speaker segments, applies Ollama grammar correction,
+  /// splits into natural sentences, and replaces the raw segments in the database.
+  Future<void> _postProcessAndReplaceSegments(int meetingId) async {
+    try {
+      print(
+        '[PostProcess] Running transcript post-processing for meeting $meetingId',
+      );
+      final isar = IsarDatabase.instance.isar;
+      final meetingRepo = _ref.read(meetingRepositoryProvider);
+      final meeting = await meetingRepo.getMeetingById(meetingId);
+      if (meeting == null) return;
+
+      final transcript = meeting.transcript.value;
+      if (transcript == null) return;
+
+      final rawSegments = transcript.segments.toList();
+      if (rawSegments.isEmpty) return;
+
+      final openAiService = _ref.read(openAIServiceProvider);
+      final List<TranscriptSegmentModel> polished = [];
+
+      // Group consecutive segments by speaker
+      final List<List<TranscriptSegmentModel>> groups = [];
+      List<TranscriptSegmentModel> currentGroup = [rawSegments.first];
+      for (int i = 1; i < rawSegments.length; i++) {
+        final seg = rawSegments[i];
+        if (seg.speaker == rawSegments[i - 1].speaker) {
+          currentGroup.add(seg);
+        } else {
+          groups.add(currentGroup);
+          currentGroup = [seg];
+        }
+      }
+      groups.add(currentGroup);
+
+      for (final group in groups) {
+        final speaker = group.first.speaker ?? 1;
+        final groupStart = group.first.startTime;
+        final groupEnd = group.last.endTime;
+        final groupDuration = groupEnd - groupStart;
+        final rawText = group.map((s) => (s.text ?? '').trim()).join(' ');
+
+        final corrected = await openAiService.correctTranscriptGrammar(rawText);
+
+        final parts = corrected.split(RegExp(r'(?<=[.!?])\s+'));
+        final sentences = parts.where((s) => s.trim().isNotEmpty).toList();
+        final effectiveSentences = sentences.isEmpty
+            ? [corrected.isEmpty ? rawText : corrected]
+            : sentences;
+
+        final totalChars = effectiveSentences.fold<int>(
+          0,
+          (sum, s) => sum + s.length,
+        );
+        double cursor = groupStart;
+        for (final sentence in effectiveSentences) {
+          final fraction = totalChars > 0
+              ? sentence.length / totalChars
+              : 1.0 / effectiveSentences.length;
+          final sentEnd = cursor + groupDuration * fraction;
+          final seg = TranscriptSegmentModel()
+            ..speaker = speaker
+            ..text = sentence.trim()
+            ..startTime = cursor
+            ..endTime = sentEnd;
+          polished.add(seg);
+          cursor = sentEnd;
+        }
+      }
+
+      // Replace raw segments with polished segments in Isar
+      // Delete the original raw segments one by one (Isar link-based delete)
+      await isar.writeTxn(() async {
+        final rawIds = rawSegments.map((s) => s.id).toList();
+        await isar.transcriptSegmentModels.deleteAll(rawIds);
+      });
+      for (final seg in polished) {
+        await meetingRepo.addTranscriptSegment(meetingId, seg);
+      }
+      print(
+        '[PostProcess] Transcript post-processing complete. ${polished.length} polished segments saved.',
+      );
+    } catch (e) {
+      print(
+        '[PostProcess ERROR] Transcript post-processing failed: $e. Raw segments preserved.',
+      );
+    }
+  }
+
   /// Runs the Advanced Speaker Intelligence pipeline.
-  Future<void> _runSpeakerIntelligenceFlow(int meetingId, String? audioFilePath) async {
-    print("[Speaker Intelligence Flow] Running for meeting: $meetingId, audio: $audioFilePath");
+  Future<void> _runSpeakerIntelligenceFlow(
+    int meetingId,
+    String? audioFilePath,
+  ) async {
+    print(
+      "[Speaker Intelligence Flow] Running for meeting: $meetingId, audio: $audioFilePath",
+    );
     final isar = IsarDatabase.instance.isar;
     final meetingRepo = _ref.read(meetingRepositoryProvider);
     final speakerService = _ref.read(speakerServiceProvider);
-    
+
     final meeting = await meetingRepo.getMeetingById(meetingId);
     if (meeting == null) return;
-    
+
     final transcript = meeting.transcript.value;
     if (transcript == null) return;
-    
+
     final segments = transcript.segments.toList();
     if (segments.isEmpty) return;
 
@@ -468,37 +668,60 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
     Map<String, dynamic> dspResult;
 
     try {
-      _ref.read(emotionHealthServiceProvider.notifier).setStatus(EmotionBackendStatus.processing);
+      _ref
+          .read(emotionHealthServiceProvider.notifier)
+          .setStatus(EmotionBackendStatus.processing);
 
       await isar.writeTxn(() async {
-        await isar.speakerEmotionModels.filter().meeting((m) => m.idEqualTo(meetingId)).deleteAll();
-        await isar.speakerAnalyticsModels.filter().meeting((m) => m.idEqualTo(meetingId)).deleteAll();
+        await isar.speakerEmotionModels
+            .filter()
+            .meeting((m) => m.idEqualTo(meetingId))
+            .deleteAll();
+        await isar.speakerAnalyticsModels
+            .filter()
+            .meeting((m) => m.idEqualTo(meetingId))
+            .deleteAll();
       });
 
       try {
         if (audioFilePath == null || audioFilePath.isEmpty) {
-          throw Exception("Audio file is missing. Bypassing backend DSP processing.");
+          throw Exception(
+            "Audio file is missing. Bypassing backend DSP processing.",
+          );
         }
-        dspResult = await _ref.read(emotionServiceProvider).analyzeAudio(
-          audioFilePath: audioFilePath,
-          segments: segments,
-        );
-        _ref.read(emotionHealthServiceProvider.notifier).setStatus(EmotionBackendStatus.connected);
+        dspResult = await _ref
+            .read(emotionServiceProvider)
+            .analyzeAudio(audioFilePath: audioFilePath, segments: segments);
+        _ref
+            .read(emotionHealthServiceProvider.notifier)
+            .setStatus(EmotionBackendStatus.connected);
       } catch (e) {
-        print("[Speaker Intelligence Flow ERROR] Flask backend failed: $e. Running local fallback.");
-        isLocalEstimation = true;
-        _ref.read(emotionHealthServiceProvider.notifier).setStatus(EmotionBackendStatus.fallbackActive);
-
-        final speakerIndexes = segments.map((s) => s.speaker ?? 0).toSet().toList();
-        final fullTranscriptText = segments.map((e) {
-          final speakerName = e.speakerProfile.value?.name ?? 'Speaker ${e.speaker}';
-          return '$speakerName: ${e.text}';
-        }).join('\n');
-
-        final estimation = await _ref.read(openAIServiceProvider).estimateEmotions(
-          fullTranscript: fullTranscriptText,
-          speakerIndexes: speakerIndexes,
+        print(
+          "[Speaker Intelligence Flow ERROR] Flask backend failed: $e. Running local fallback.",
         );
+        isLocalEstimation = true;
+        _ref
+            .read(emotionHealthServiceProvider.notifier)
+            .setStatus(EmotionBackendStatus.fallbackActive);
+
+        final speakerIndexes = segments
+            .map((s) => s.speaker ?? 0)
+            .toSet()
+            .toList();
+        final fullTranscriptText = segments
+            .map((e) {
+              final speakerName =
+                  e.speakerProfile.value?.name ?? 'Speaker ${e.speaker}';
+              return '$speakerName: ${e.text}';
+            })
+            .join('\n');
+
+        final estimation = await _ref
+            .read(openAIServiceProvider)
+            .estimateEmotions(
+              fullTranscript: fullTranscriptText,
+              speakerIndexes: speakerIndexes,
+            );
 
         final Map<String, dynamic> mockedResult = {
           'speakers': [],
@@ -507,11 +730,12 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
               'startTime': 0.0,
               'endTime': meeting.durationSeconds,
               'emotion': estimation['overallEmotion'] ?? 'Neutral',
-            }
+            },
           ],
         };
 
-        final List<dynamic> estimatedSpeakers = estimation['speakers'] as List? ?? [];
+        final List<dynamic> estimatedSpeakers =
+            estimation['speakers'] as List? ?? [];
         for (final spk in estimatedSpeakers) {
           if (spk is Map) {
             final speakerIndex = spk['speakerIndex'] as int;
@@ -523,7 +747,10 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
             int turns = 0;
             for (final seg in segments) {
               if (seg.speaker == speakerIndex) {
-                speakingTime += ((seg.endTime - seg.startTime).clamp(0.0, double.infinity)).toDouble();
+                speakingTime += ((seg.endTime - seg.startTime).clamp(
+                  0.0,
+                  double.infinity,
+                )).toDouble();
                 wordCount += (seg.text ?? '').split(' ').length.toInt();
                 turns += 1;
               }
@@ -537,28 +764,35 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
               'analytics': {
                 'speakingTimeSeconds': speakingTime,
                 'wordCount': wordCount,
-                'participationPercentage': meeting.durationSeconds > 0 ? speakingTime / meeting.durationSeconds : 0.0,
+                'participationPercentage': meeting.durationSeconds > 0
+                    ? speakingTime / meeting.durationSeconds
+                    : 0.0,
                 'interactionScore': turns * 5.0,
-              }
+              },
             });
           }
         }
         dspResult = mockedResult;
       }
-      
+
       final dspSpeakers = dspResult['speakers'] as List? ?? [];
       final dspTimeline = dspResult['meetingTimeline'] as List? ?? [];
-      
+
       final Map<int, SpeakerProfileModel> indexToProfile = {};
-      
+
       for (final spkObj in dspSpeakers) {
         if (spkObj is Map) {
           final speakerIndex = spkObj['speakerIndex'] as int;
-          final embedding = (spkObj['voiceEmbedding'] as List?)?.map((e) => (e as num).toDouble()).toList() ?? [];
+          final embedding =
+              (spkObj['voiceEmbedding'] as List?)
+                  ?.map((e) => (e as num).toDouble())
+                  .toList() ??
+              [];
           final primaryMood = spkObj['primaryMood']?.toString() ?? 'Neutral';
-          final moodConfidence = (spkObj['moodConfidence'] as num?)?.toDouble() ?? 0.85;
+          final moodConfidence =
+              (spkObj['moodConfidence'] as num?)?.toDouble() ?? 0.85;
           final analytics = spkObj['analytics'] as Map?;
-          
+
           SpeakerProfileModel profile;
           if (embedding.isNotEmpty) {
             profile = await speakerService.getOrCreateSpeakerProfileForVoice(
@@ -566,18 +800,24 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
               defaultName: 'Speaker $speakerIndex',
             );
           } else {
-            profile = await speakerService.getOrCreateSpeakerProfileByName('Speaker $speakerIndex');
+            profile = await speakerService.getOrCreateSpeakerProfileByName(
+              'Speaker $speakerIndex',
+            );
           }
-          
+
           indexToProfile[speakerIndex] = profile;
-          
+
           if (analytics != null) {
             final spkAnalytics = SpeakerAnalyticsModel()
-              ..speakingTimeSeconds = (analytics['speakingTimeSeconds'] as num?)?.toDouble() ?? 0.0
+              ..speakingTimeSeconds =
+                  (analytics['speakingTimeSeconds'] as num?)?.toDouble() ?? 0.0
               ..wordCount = (analytics['wordCount'] as num?)?.toInt() ?? 0
-              ..participationPercentage = (analytics['participationPercentage'] as num?)?.toDouble() ?? 0.0
-              ..interactionScore = (analytics['interactionScore'] as num?)?.toDouble() ?? 0.0;
-            
+              ..participationPercentage =
+                  (analytics['participationPercentage'] as num?)?.toDouble() ??
+                  0.0
+              ..interactionScore =
+                  (analytics['interactionScore'] as num?)?.toDouble() ?? 0.0;
+
             await isar.writeTxn(() async {
               spkAnalytics.speakerProfile.value = profile;
               spkAnalytics.meeting.value = meeting;
@@ -586,13 +826,13 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
               await spkAnalytics.meeting.save();
             });
           }
-          
+
           final spkEmotion = SpeakerEmotionModel()
             ..emotion = primaryMood
             ..confidence = moodConfidence
             ..startTime = 0.0
             ..endTime = meeting.durationSeconds;
-            
+
           await isar.writeTxn(() async {
             spkEmotion.speakerProfile.value = profile;
             spkEmotion.meeting.value = meeting;
@@ -602,15 +842,17 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
           });
         }
       }
-      
+
       for (final segment in segments) {
         final spkIdx = segment.speaker ?? 0;
         if (!indexToProfile.containsKey(spkIdx)) {
-          final profile = await speakerService.getOrCreateSpeakerProfileByName('Speaker $spkIdx');
+          final profile = await speakerService.getOrCreateSpeakerProfileByName(
+            'Speaker $spkIdx',
+          );
           indexToProfile[spkIdx] = profile;
         }
       }
-      
+
       await isar.writeTxn(() async {
         for (final segment in segments) {
           final profile = indexToProfile[segment.speaker ?? 0];
@@ -621,7 +863,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
           }
         }
       });
-      
+
       final actionItems = meeting.actionItems.toList();
       if (actionItems.isNotEmpty) {
         await isar.writeTxn(() async {
@@ -630,7 +872,9 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
             if (assignee.isNotEmpty) {
               for (final profile in indexToProfile.values) {
                 final profName = profile.name?.trim().toLowerCase() ?? '';
-                if (profName == assignee || assignee.contains(profName) || profName.contains(assignee)) {
+                if (profName == assignee ||
+                    assignee.contains(profName) ||
+                    profName.contains(assignee)) {
                   item.speakerProfile.value = profile;
                   await isar.actionItemModels.put(item);
                   await item.speakerProfile.save();
@@ -643,12 +887,18 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       }
 
       if (dspTimeline.isNotEmpty) {
-        final emotionsList = dspTimeline.map((e) => e['emotion']?.toString() ?? 'Neutral').toList();
-        final mostFreq = emotionsList.fold<Map<String, int>>({}, (map, element) {
+        final emotionsList = dspTimeline
+            .map((e) => e['emotion']?.toString() ?? 'Neutral')
+            .toList();
+        final mostFreq = emotionsList.fold<Map<String, int>>({}, (
+          map,
+          element,
+        ) {
           map[element] = (map[element] ?? 0) + 1;
           return map;
         });
-        final sorted = mostFreq.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        final sorted = mostFreq.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
         meeting.detectedEmotion = sorted.first.key;
         meeting.emotionConfidence = 0.85;
       } else {
@@ -657,12 +907,13 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       }
       meeting.isLocalEstimation = isLocalEstimation;
       await meetingRepo.updateMeeting(meeting);
-      
     } catch (e) {
       print("[Speaker Intelligence Flow ERROR] Failed: $e");
       for (final segment in segments) {
         final spkIdx = segment.speaker ?? 0;
-        final profile = await speakerService.getOrCreateSpeakerProfileByName('Speaker $spkIdx');
+        final profile = await speakerService.getOrCreateSpeakerProfileByName(
+          'Speaker $spkIdx',
+        );
         await isar.writeTxn(() async {
           segment.speakerProfile.value = profile;
           await isar.transcriptSegmentModels.put(segment);
@@ -677,7 +928,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   }
 }
 
-
-final recordingProvider = StateNotifierProvider<RecordingNotifier, RecordingState>((ref) {
-  return RecordingNotifier(ref);
-});
+final recordingProvider =
+    StateNotifierProvider<RecordingNotifier, RecordingState>((ref) {
+      return RecordingNotifier(ref);
+    });

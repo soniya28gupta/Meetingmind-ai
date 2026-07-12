@@ -20,7 +20,8 @@ class DeepgramService {
       throw Exception('Deepgram API Key is empty.');
     }
 
-    _segmentStreamController = StreamController<TranscriptSegmentModel>.broadcast();
+    _segmentStreamController =
+        StreamController<TranscriptSegmentModel>.broadcast();
 
     // Query parameters for Deepgram streaming: linear16, 16kHz, mono, diarize enabled, model nova-2, smart format, interim results
     final url = Uri.parse(
@@ -36,16 +37,15 @@ class DeepgramService {
     );
 
     try {
-      _channel = WebSocketChannel.connect(
-        url,
-        protocols: ['token', apiKey],
-      );
+      _channel = WebSocketChannel.connect(url, protocols: ['token', apiKey]);
 
       // Verify connection ready state with timeout
       await _channel!.ready.timeout(
         const Duration(seconds: 5),
         onTimeout: () {
-          throw TimeoutException('Connection to Deepgram timed out. Check your internet connection.');
+          throw TimeoutException(
+            'Connection to Deepgram timed out. Check your internet connection.',
+          );
         },
       );
 
@@ -126,13 +126,13 @@ class DeepgramService {
 
   Future<void> disconnect() async {
     if (!_isConnected) return;
-    
+
     _isConnected = false;
     // Send empty JSON to indicate end of stream to Deepgram
     try {
       _channel?.sink.add(jsonEncode({"type": "CloseStream"}));
     } catch (_) {}
-    
+
     await _channel?.sink.close();
     _channel = null;
     await _segmentStreamController?.close();

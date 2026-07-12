@@ -11,15 +11,15 @@ class AudioHelper {
     header[1] = 0x49; // 'I'
     header[2] = 0x46; // 'F'
     header[3] = 0x46; // 'F'
-    
+
     final fileSize = numBytes + 36;
     header[4] = fileSize & 0xff;
     header[5] = (fileSize >> 8) & 0xff;
     header[6] = (fileSize >> 16) & 0xff;
     header[7] = (fileSize >> 24) & 0xff;
 
-    header[8] = 0x57;  // 'W'
-    header[9] = 0x41;  // 'A'
+    header[8] = 0x57; // 'W'
+    header[9] = 0x41; // 'A'
     header[10] = 0x56; // 'V'
     header[11] = 0x45; // 'E'
 
@@ -71,7 +71,11 @@ class AudioHelper {
   }
 
   /// Converts a raw PCM file to a playable WAV file by prepending the header
-  static Future<void> convertPcmToWav(String pcmPath, String wavPath, int sampleRate) async {
+  static Future<void> convertPcmToWav(
+    String pcmPath,
+    String wavPath,
+    int sampleRate,
+  ) async {
     final pcmFile = File(pcmPath);
     if (!await pcmFile.exists()) return;
 

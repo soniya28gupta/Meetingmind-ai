@@ -14,10 +14,13 @@ abstract class MeetingRepository {
   Future<MeetingModel> createMeeting(String title);
   Future<void> updateMeeting(MeetingModel meeting);
   Future<void> deleteMeeting(int id);
-  
+
   // Real-time transcript updates
-  Future<void> addTranscriptSegment(int meetingId, TranscriptSegmentModel segment);
-  
+  Future<void> addTranscriptSegment(
+    int meetingId,
+    TranscriptSegmentModel segment,
+  );
+
   // Summary, action items, and decisions save
   Future<void> saveSummaryAndActionItems(
     int meetingId,
@@ -43,7 +46,8 @@ class IsarMeetingRepository implements MeetingRepository {
   }
 
   int _generateUniqueIntId() {
-    return (DateTime.now().microsecondsSinceEpoch + _random.nextInt(1000)) & 0x7FFFFFFFFFFFFFFF;
+    return (DateTime.now().microsecondsSinceEpoch + _random.nextInt(1000)) &
+        0x7FFFFFFFFFFFFFFF;
   }
 
   @override
@@ -83,7 +87,9 @@ class IsarMeetingRepository implements MeetingRepository {
 
   @override
   Stream<MeetingModel?> watchMeetingById(int id) {
-    return _isar.meetingModels.watchObject(id, fireImmediately: true).asyncMap((meeting) async {
+    return _isar.meetingModels.watchObject(id, fireImmediately: true).asyncMap((
+      meeting,
+    ) async {
       if (meeting != null && meeting.userId == _currentUserId) {
         await meeting.transcript.load();
         if (meeting.transcript.value != null) {
@@ -126,7 +132,9 @@ class IsarMeetingRepository implements MeetingRepository {
     });
 
     FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((e) {
-      print("[MeetingRepository ERROR] createMeeting Firestore sync failed: $e");
+      print(
+        "[MeetingRepository ERROR] createMeeting Firestore sync failed: $e",
+      );
     });
 
     return meeting;
@@ -138,8 +146,12 @@ class IsarMeetingRepository implements MeetingRepository {
     await _isar.writeTxn(() async {
       await _isar.meetingModels.put(meeting);
     });
-    FirestoreService.instance.saveMeeting(meeting, _currentUserId).catchError((e) {
-      print("[MeetingRepository ERROR] updateMeeting Firestore sync failed: $e");
+    FirestoreService.instance.saveMeeting(meeting, _currentUserId).catchError((
+      e,
+    ) {
+      print(
+        "[MeetingRepository ERROR] updateMeeting Firestore sync failed: $e",
+      );
     });
   }
 
@@ -149,7 +161,9 @@ class IsarMeetingRepository implements MeetingRepository {
     if (meeting == null || meeting.userId != _currentUserId) return;
 
     FirestoreService.instance.deleteMeeting(id, _currentUserId).catchError((e) {
-      print("[MeetingRepository ERROR] deleteMeeting Firestore sync failed: $e");
+      print(
+        "[MeetingRepository ERROR] deleteMeeting Firestore sync failed: $e",
+      );
     });
 
     await _isar.writeTxn(() async {
@@ -171,8 +185,12 @@ class IsarMeetingRepository implements MeetingRepository {
       final currentUid = _currentUserId;
       for (final item in meeting.actionItems) {
         await _isar.actionItemModels.delete(item.id);
-        FirestoreService.instance.deleteTask(item.id, currentUid).catchError((e) {
-          print("[MeetingRepository ERROR] deleteTask Firestore sync failed: $e");
+        FirestoreService.instance.deleteTask(item.id, currentUid).catchError((
+          e,
+        ) {
+          print(
+            "[MeetingRepository ERROR] deleteTask Firestore sync failed: $e",
+          );
         });
       }
       for (final decision in meeting.decisions) {
@@ -188,7 +206,10 @@ class IsarMeetingRepository implements MeetingRepository {
   }
 
   @override
-  Future<void> addTranscriptSegment(int meetingId, TranscriptSegmentModel segment) async {
+  Future<void> addTranscriptSegment(
+    int meetingId,
+    TranscriptSegmentModel segment,
+  ) async {
     final meeting = await _isar.meetingModels.get(meetingId);
     if (meeting == null || meeting.userId != _currentUserId) return;
 
@@ -203,7 +224,7 @@ class IsarMeetingRepository implements MeetingRepository {
       segment.userId = currentUid;
       await _isar.transcriptSegmentModels.put(segment);
       await segment.transcript.save();
-      
+
       // Update meeting duration to match the end time of the last segment
       if (segment.endTime > meeting.durationSeconds) {
         meeting.durationSeconds = segment.endTime;
@@ -212,7 +233,9 @@ class IsarMeetingRepository implements MeetingRepository {
     });
 
     FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((e) {
-      print("[MeetingRepository ERROR] addTranscriptSegment Firestore sync failed: $e");
+      print(
+        "[MeetingRepository ERROR] addTranscriptSegment Firestore sync failed: $e",
+      );
     });
   }
 
@@ -223,28 +246,38 @@ class IsarMeetingRepository implements MeetingRepository {
     List<ActionItemModel> actionItems,
     List<DecisionModel> decisions,
   ) async {
-    print("[MeetingRepository] saveSummaryAndActionItems started for meeting ID: $meetingId");
+    print(
+      "[MeetingRepository] saveSummaryAndActionItems started for meeting ID: $meetingId",
+    );
     try {
       final meeting = await getMeetingById(meetingId);
       if (meeting == null || meeting.userId != _currentUserId) {
-        print("[MeetingRepository ERROR] Meeting not found in database or unauthorized for ID: $meetingId");
+        print(
+          "[MeetingRepository ERROR] Meeting not found in database or unauthorized for ID: $meetingId",
+        );
         return;
       }
 
       final currentUid = _currentUserId;
-      print("[MeetingRepository] Deleting previous summary, action items, and decisions...");
+      print(
+        "[MeetingRepository] Deleting previous summary, action items, and decisions...",
+      );
       await _isar.writeTxn(() async {
         // 1. Delete previous summary if exists
         if (meeting.summary.value != null) {
           await _isar.summaryModels.delete(meeting.summary.value!.id);
         }
-        
+
         // 2. Delete previous action items
         final oldActionItems = meeting.actionItems.toList();
         for (final item in oldActionItems) {
           await _isar.actionItemModels.delete(item.id);
-          FirestoreService.instance.deleteTask(item.id, currentUid).catchError((e) {
-            print("[MeetingRepository ERROR] deleteTask Firestore sync failed: $e");
+          FirestoreService.instance.deleteTask(item.id, currentUid).catchError((
+            e,
+          ) {
+            print(
+              "[MeetingRepository ERROR] deleteTask Firestore sync failed: $e",
+            );
           });
         }
         meeting.actionItems.clear();
@@ -264,7 +297,9 @@ class IsarMeetingRepository implements MeetingRepository {
         meeting.summary.value = summary;
 
         // 5. Save new action items
-        print("[MeetingRepository] Saving ${actionItems.length} new ActionItemModels...");
+        print(
+          "[MeetingRepository] Saving ${actionItems.length} new ActionItemModels...",
+        );
         for (final item in actionItems) {
           item.id = _generateUniqueIntId();
           item.meeting.value = meeting;
@@ -274,7 +309,9 @@ class IsarMeetingRepository implements MeetingRepository {
         }
 
         // 6. Save new decisions
-        print("[MeetingRepository] Saving ${decisions.length} new DecisionModels...");
+        print(
+          "[MeetingRepository] Saving ${decisions.length} new DecisionModels...",
+        );
         for (final decision in decisions) {
           decision.id = _generateUniqueIntId();
           decision.meeting.value = meeting;
@@ -293,10 +330,16 @@ class IsarMeetingRepository implements MeetingRepository {
         await meeting.decisions.save();
       });
 
-      FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((e) {
-        print("[MeetingRepository ERROR] saveSummaryAndActionItems Firestore sync failed: $e");
+      FirestoreService.instance.saveMeeting(meeting, currentUid).catchError((
+        e,
+      ) {
+        print(
+          "[MeetingRepository ERROR] saveSummaryAndActionItems Firestore sync failed: $e",
+        );
       });
-      print("[MeetingRepository] saveSummaryAndActionItems completed successfully.");
+      print(
+        "[MeetingRepository] saveSummaryAndActionItems completed successfully.",
+      );
     } catch (e, stack) {
       print("[MeetingRepository ERROR] saveSummaryAndActionItems failed: $e");
       print(stack);

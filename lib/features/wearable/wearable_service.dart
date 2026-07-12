@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'wearable_models.dart';
 
+/// Manages BLE scanning, GATT connection, and live sensor data streaming.
+/// ZERO fake data — only real BLE sensor readings are emitted.
 class WearableService {
   static final WearableService _instance = WearableService._internal();
   factory WearableService() => _instance;
@@ -14,11 +15,17 @@ class WearableService {
   StreamController<LiveSensorData>? _liveSensorController;
   StreamController<DeviceConnectionState>? _connectionStateController;
 
-  Timer? _simulatorTimer;
   DiscoveredDevice? _connectedDevice;
   DeviceConnectionState _connectionState = DeviceConnectionState.disconnected;
 
-  // Streams exposed to UI/Providers
+  // GATT subscriptions for auto-reconnect
+  StreamSubscription<BluetoothConnectionState>? _bleConnectionSub;
+  BluetoothDevice? _activeBluetoothDevice;
+
+  // Cached values read dynamically
+  String firmwareVersion = 'v1.0.0';
+  int? lastRssi;
+
   Stream<List<DiscoveredDevice>> get discoveredDevicesStream =>
       _discoveryController?.stream ?? const Stream.empty();
 
@@ -34,44 +41,36 @@ class WearableService {
   void initialize() {
     _discoveryController = StreamController<List<DiscoveredDevice>>.broadcast();
     _liveSensorController = StreamController<LiveSensorData>.broadcast();
-    _connectionStateController = StreamController<DeviceConnectionState>.broadcast();
+    _connectionStateController =
+        StreamController<DeviceConnectionState>.broadcast();
   }
 
   Future<bool> requestPermissions() async {
-    // BLE scanning and connection permissions + location (needed for scanning on older OS versions)
     final permissions = [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
       Permission.location,
     ];
-
-    Map<Permission, PermissionStatus> statuses = await permissions.request();
-    return statuses.values.every((status) => status.isGranted);
+    final statuses = await permissions.request();
+    return statuses.values.every((s) => s.isGranted);
   }
 
   Future<bool> isBluetoothEnabled() async {
-    return await FlutterBluePlus.isSupported && await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on;
+    return await FlutterBluePlus.isSupported &&
+        await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on;
   }
 
   Future<void> startScanning() async {
     await requestPermissions();
     final isEnabled = await isBluetoothEnabled();
-    
-    List<DiscoveredDevice> devicesList = [];
-    
-    // Always include a simulator device for high-fidelity testing
-    devicesList.add(DiscoveredDevice(
-      id: 'SIMULATOR_DEVICE',
-      name: 'MeetingMind Wearable Simulator',
-      type: WearableDeviceType.simulator,
-      rssi: -45,
-    ));
-    _discoveryController?.add(devicesList);
 
     if (!isEnabled) {
-      print("[WearableService] Bluetooth is not enabled. Scanning BLE will be bypassed, simulator is active.");
+      print('[WearableService] Bluetooth not enabled. No devices to scan.');
+      _discoveryController?.add([]); // empty list — no fake devices
       return;
     }
+
+    List<DiscoveredDevice> devicesList = [];
 
     try {
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
@@ -79,22 +78,22 @@ class WearableService {
         for (var r in results) {
           final name = r.device.platformName.trim();
           if (name.isEmpty) continue;
-
-          // Check if already in list
           if (devicesList.any((d) => d.id == r.device.remoteId.str)) continue;
 
           final type = _determineDeviceType(name);
-          devicesList.add(DiscoveredDevice(
-            id: r.device.remoteId.str,
-            name: name,
-            type: type,
-            rssi: r.rssi,
-          ));
+          devicesList.add(
+            DiscoveredDevice(
+              id: r.device.remoteId.str,
+              name: name,
+              type: type,
+              rssi: r.rssi,
+            ),
+          );
         }
         _discoveryController?.add(List.from(devicesList));
       });
     } catch (e) {
-      print("[WearableService ERROR] startScan failed: $e");
+      print('[WearableService ERROR] startScan failed: $e');
     }
   }
 
@@ -110,75 +109,174 @@ class WearableService {
     final lowerName = name.toLowerCase();
     if (lowerName.contains('oura')) return WearableDeviceType.ouraRing;
     if (lowerName.contains('fitbit')) return WearableDeviceType.fitbit;
-    if (lowerName.contains('xiaomi') || lowerName.contains('mi band')) return WearableDeviceType.xiaomiBand;
-    if (lowerName.contains('galaxy') || lowerName.contains('samsung') || lowerName.contains('gear')) return WearableDeviceType.samsungWatch;
+    if (lowerName.contains('xiaomi') || lowerName.contains('mi band'))
+      return WearableDeviceType.xiaomiBand;
+    if (lowerName.contains('galaxy') ||
+        lowerName.contains('samsung') ||
+        lowerName.contains('gear')) {
+      return WearableDeviceType.samsungWatch;
+    }
+    if (lowerName.contains('pixel watch')) return WearableDeviceType.pixelWatch;
     if (lowerName.contains('watch')) return WearableDeviceType.xiaomiWatch;
     return WearableDeviceType.genericHeartRate;
   }
 
   Future<void> connectDevice(DiscoveredDevice device) async {
     await disconnectDevice();
-    
+
     _connectedDevice = device;
+    lastRssi = device.rssi;
     _updateConnectionState(DeviceConnectionState.connecting);
 
-    if (device.type == WearableDeviceType.simulator) {
-      // Setup simulator connection
-      await Future.delayed(const Duration(milliseconds: 800));
-      _updateConnectionState(DeviceConnectionState.connected);
-      _startSimulatorStream();
-      return;
-    }
-
-    // GATT Connection Flow
     try {
       final bleDevice = BluetoothDevice(remoteId: DeviceIdentifier(device.id));
-      await bleDevice.connect(timeout: const Duration(seconds: 10), autoConnect: false);
-      
+      _activeBluetoothDevice = bleDevice;
+
+      await bleDevice.connect(
+        timeout: const Duration(seconds: 10),
+        autoConnect: false,
+      );
       _updateConnectionState(DeviceConnectionState.connected);
-      
-      // Discover services & subscribe to Heart Rate if generic BLE device
-      List<BluetoothService> services = await bleDevice.discoverServices();
-      for (var s in services) {
-        if (s.serviceUuid.str.toLowerCase().contains('180d')) { // Heart Rate Service
-          for (var c in s.characteristics) {
-            if (c.characteristicUuid.str.toLowerCase().contains('2a37')) { // HR Measurement
-              await c.setNotifyValue(true);
-              c.lastValueStream.listen((value) {
-                if (value.isNotEmpty) {
-                  // Standard Heart Rate Measurement format: byte 1 contains flags, byte 2 contains HR
-                  int hr = value.length > 1 ? value[1] : 70;
-                  _liveSensorController?.add(LiveSensorData(
-                    heartRate: hr,
-                    stress: _calculateStressFromHR(hr),
-                    steps: 0, // Heart Rate standard BLE doesn't include steps
-                    battery: 90,
-                    sleep: 7.5,
-                    timestamp: DateTime.now(),
-                  ));
-                }
-              });
-            }
-          }
+
+      // Monitor connection state for auto-reconnect
+      _bleConnectionSub = bleDevice.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          print(
+            '[WearableService] Device disconnected. Attempting reconnect...',
+          );
+          _updateConnectionState(DeviceConnectionState.reconnecting);
+          _attemptReconnect(bleDevice, device);
         }
-      }
+      });
+
+      // Discover GATT services and subscribe to standard health characteristics
+      final services = await bleDevice.discoverServices();
+      _subscribeToHealthCharacteristics(services);
     } catch (e) {
-      print("[WearableService ERROR] Connection to ${device.name} failed: $e");
+      print('[WearableService ERROR] Connection to ${device.name} failed: $e');
       _updateConnectionState(DeviceConnectionState.disconnected);
       _connectedDevice = null;
       rethrow;
     }
   }
 
-  Future<void> disconnectDevice() async {
-    _simulatorTimer?.cancel();
-    _simulatorTimer = null;
+  void _subscribeToHealthCharacteristics(List<BluetoothService> services) {
+    for (final s in services) {
+      final uuid = s.serviceUuid.str.toLowerCase();
 
-    if (_connectedDevice != null && _connectedDevice!.type != WearableDeviceType.simulator) {
+      // Heart Rate Service (0x180D)
+      if (uuid.contains('180d')) {
+        for (final c in s.characteristics) {
+          if (c.characteristicUuid.str.toLowerCase().contains('2a37')) {
+            () async {
+              try {
+                await c.setNotifyValue(true);
+                c.lastValueStream.listen((value) {
+                  if (value.isNotEmpty) {
+                    // HR Measurement format: byte[0] = flags, byte[1] = HR value
+                    final hr = value.length > 1 ? value[1] : value[0];
+                    final data = LiveSensorData(
+                      heartRate: hr,
+                      timestamp: DateTime.now(),
+                    );
+                    _liveSensorController?.add(data);
+                  }
+                });
+              } catch (e) {
+                print('[WearableService] HR notify error: $e');
+              }
+            }();
+          }
+        }
+      }
+
+      // Battery Service (0x180F)
+      if (uuid.contains('180f')) {
+        for (final c in s.characteristics) {
+          if (c.characteristicUuid.str.toLowerCase().contains('2a19')) {
+            () async {
+              try {
+                await c.read();
+                await c.setNotifyValue(true);
+              } catch (_) {}
+            }();
+          }
+        }
+      }
+
+      // SpO₂ / Blood Oxygen (0x1822 or 0x2A5F)
+      if (uuid.contains('1822') || uuid.contains('2a5f')) {
+        for (final c in s.characteristics) {
+          () async {
+            try {
+              await c.setNotifyValue(true);
+              c.lastValueStream.listen((value) {
+                if (value.isNotEmpty && value[0] > 50 && value[0] <= 100) {
+                  final existing = LiveSensorData(
+                    spo2: value[0],
+                    timestamp: DateTime.now(),
+                  );
+                  _liveSensorController?.add(existing);
+                }
+              });
+            } catch (_) {}
+          }();
+        }
+      }
+
+      // Device Information Service (0x180A)
+      if (uuid.contains('180a')) {
+        for (final c in s.characteristics) {
+          if (c.characteristicUuid.str.toLowerCase().contains('2a26')) {
+            () async {
+              try {
+                final val = await c.read();
+                if (val.isNotEmpty) {
+                  firmwareVersion = String.fromCharCodes(val).trim();
+                  print(
+                    '[WearableService] Read Firmware Version: $firmwareVersion',
+                  );
+                }
+              } catch (_) {}
+            }();
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _attemptReconnect(
+    BluetoothDevice bleDevice,
+    DiscoveredDevice device,
+  ) async {
+    await Future.delayed(const Duration(seconds: 3));
+    if (_connectionState == DeviceConnectionState.reconnecting) {
       try {
-        final bleDevice = BluetoothDevice(remoteId: DeviceIdentifier(_connectedDevice!.id));
-        await bleDevice.disconnect();
+        await bleDevice.connect(
+          timeout: const Duration(seconds: 10),
+          autoConnect: false,
+        );
+        _updateConnectionState(DeviceConnectionState.connected);
+        final services = await bleDevice.discoverServices();
+        _subscribeToHealthCharacteristics(services);
+        print('[WearableService] Reconnected to ${device.name}');
+      } catch (e) {
+        print('[WearableService] Reconnect failed: $e');
+        _updateConnectionState(DeviceConnectionState.disconnected);
+        _connectedDevice = null;
+      }
+    }
+  }
+
+  Future<void> disconnectDevice() async {
+    _bleConnectionSub?.cancel();
+    _bleConnectionSub = null;
+
+    if (_activeBluetoothDevice != null) {
+      try {
+        await _activeBluetoothDevice!.disconnect();
       } catch (_) {}
+      _activeBluetoothDevice = null;
     }
 
     _connectedDevice = null;
@@ -188,53 +286,6 @@ class WearableService {
   void _updateConnectionState(DeviceConnectionState state) {
     _connectionState = state;
     _connectionStateController?.add(state);
-  }
-
-  double _calculateStressFromHR(int hr) {
-    // Heuristics mapping Heart Rate to stress level
-    if (hr < 60) return 15.0; // relaxed
-    if (hr < 75) return 28.0; // low stress
-    if (hr < 90) return 48.0; // moderate stress
-    if (hr < 110) return 72.0; // high stress
-    return 89.0; // extreme stress
-  }
-
-  void _startSimulatorStream() {
-    _simulatorTimer?.cancel();
-    final random = Random();
-    int currentSteps = 4250;
-    int currentHR = 72;
-    int batteryLevel = 88;
-
-    _simulatorTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_connectionState != DeviceConnectionState.connected) {
-        timer.cancel();
-        return;
-      }
-
-      // Small natural fluctuations
-      currentHR += random.nextInt(5) - 2;
-      currentHR = currentHR.clamp(60, 115);
-      
-      currentSteps += random.nextInt(3); // increments steps slowly
-      
-      if (random.nextDouble() < 0.01) {
-        batteryLevel -= 1;
-        batteryLevel = batteryLevel.clamp(0, 100);
-      }
-
-      final stress = _calculateStressFromHR(currentHR) + (random.nextDouble() * 4 - 2);
-      final sleep = 7.35 + (random.nextDouble() * 0.1);
-
-      _liveSensorController?.add(LiveSensorData(
-        heartRate: currentHR,
-        stress: double.parse(stress.toStringAsFixed(1)),
-        steps: currentSteps,
-        battery: batteryLevel,
-        sleep: double.parse(sleep.toStringAsFixed(1)),
-        timestamp: DateTime.now(),
-      ));
-    });
   }
 
   void dispose() {

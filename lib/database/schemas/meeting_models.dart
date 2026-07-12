@@ -24,7 +24,7 @@ class MeetingModel {
 
   @Index()
   String? userId; // Owner User ID
-  
+
   String? title;
   DateTime? createdAt;
   double durationSeconds = 0.0;
@@ -50,13 +50,13 @@ class MeetingModel {
 
   final transcript = IsarLink<TranscriptModel>();
   final summary = IsarLink<SummaryModel>();
-  
+
   @Backlink(to: 'meeting')
   final actionItems = IsarLinks<ActionItemModel>();
-  
+
   @Backlink(to: 'meeting')
   final decisions = IsarLinks<DecisionModel>();
-  
+
   @Backlink(to: 'meeting')
   final chatMessages = IsarLinks<ChatMessageModel>();
 }
@@ -72,7 +72,7 @@ class TranscriptSegmentModel {
   String? text;
   double startTime = 0.0; // In seconds
   double endTime = 0.0; // In seconds
-  
+
   final transcript = IsarLink<TranscriptModel>();
   final speakerProfile = IsarLink<SpeakerProfileModel>();
 }
@@ -83,7 +83,7 @@ class TranscriptModel {
 
   @Index()
   String? userId; // Owner User ID
-  
+
   @Backlink(to: 'transcript')
   final segments = IsarLinks<TranscriptSegmentModel>();
 }
@@ -155,7 +155,7 @@ class SpeakerProfileModel {
   String? userId; // Owner User ID
 
   String? name;
-  
+
   int? colorValue; // Color integer
   String? avatarEmoji; // Default emoji representation
   List<double>? voiceEmbedding; // log spectral band energy (13 values)

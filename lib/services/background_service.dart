@@ -5,8 +5,6 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 @pragma('vm:entry-point')
-
-
 class MeetingMindBackgroundService {
   static const notificationChannelId = 'meetingmind_recording_channel';
   static const notificationId = 888;
@@ -26,7 +24,9 @@ class MeetingMindBackgroundService {
     );
 
     await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(channel);
 
     await service.configure(
@@ -86,7 +86,7 @@ class MeetingMindBackgroundService {
         }
       }
       seconds++;
-      
+
       // Send tick update back to the main app thread
       service.invoke('tick', {'seconds': seconds});
     });

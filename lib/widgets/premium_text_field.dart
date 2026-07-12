@@ -67,7 +67,8 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
     bool hasUpper = _password.contains(RegExp(r'[A-Z]'));
 
     if (hasLetters && hasNumbers) score += 0.3; // Medium
-    if (hasSpecial || (hasLetters && hasNumbers && hasUpper && _password.length >= 8)) {
+    if (hasSpecial ||
+        (hasLetters && hasNumbers && hasUpper && _password.length >= 8)) {
       score += 0.3; // Strong
     }
 
@@ -103,8 +104,12 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
             boxShadow: [
               BoxShadow(
                 color: widget.isPassword
-                    ? AppColors.primary.withValues(alpha: _isFocused ? 0.2 : 0.0)
-                    : AppColors.secondary.withValues(alpha: _isFocused ? 0.2 : 0.0),
+                    ? AppColors.primary.withValues(
+                        alpha: _isFocused ? 0.2 : 0.0,
+                      )
+                    : AppColors.secondary.withValues(
+                        alpha: _isFocused ? 0.2 : 0.0,
+                      ),
                 spreadRadius: _isFocused ? 3.0 : 0.0,
                 blurRadius: _isFocused ? 8.0 : 0.0,
               ),
@@ -134,7 +139,9 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
               prefixIcon: Icon(
                 widget.prefixIcon,
                 color: _isFocused
-                    ? (widget.isPassword ? AppColors.primary : AppColors.secondary)
+                    ? (widget.isPassword
+                          ? AppColors.primary
+                          : AppColors.secondary)
                     : AppColors.textMuted,
               ),
               suffixIcon: widget.isPassword
@@ -143,7 +150,9 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
                         _obscureText
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        color: _isFocused ? AppColors.primary : AppColors.textMuted,
+                        color: _isFocused
+                            ? AppColors.primary
+                            : AppColors.textMuted,
                         size: 20,
                       ),
                       onPressed: () {
@@ -154,8 +163,13 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
                     )
                   : null,
               filled: true,
-              fillColor: AppColors.surface.withValues(alpha: _isFocused ? 0.6 : 0.35),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              fillColor: AppColors.surface.withValues(
+                alpha: _isFocused ? 0.6 : 0.35,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
@@ -175,7 +189,9 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: widget.isPassword ? AppColors.primary : AppColors.secondary,
+                  color: widget.isPassword
+                      ? AppColors.primary
+                      : AppColors.secondary,
                   width: 1.5,
                 ),
               ),
@@ -201,7 +217,8 @@ class _PremiumTextFieldState extends State<PremiumTextField> {
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         height: 4,
-                        width: MediaQuery.of(context).size.width * 0.8 * strength,
+                        width:
+                            MediaQuery.of(context).size.width * 0.8 * strength,
                         decoration: BoxDecoration(
                           color: strengthColor,
                           borderRadius: BorderRadius.circular(2),

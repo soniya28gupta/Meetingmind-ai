@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/schemas/meeting_models.dart';
 import '../features/settings/settings_provider.dart';
 import '../providers/app_providers.dart';
+import '../core/config/backend_config.dart';
 import 'emotion_health_service.dart';
 
 class EmotionService {
@@ -15,10 +16,12 @@ class EmotionService {
     if (_ref != null) {
       return _ref.read(dioProvider);
     }
-    return Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 90),
-    ));
+    return Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 90),
+      ),
+    );
   }
 
   Future<String> _findWorkingBackendUrl() async {
@@ -28,18 +31,30 @@ class EmotionService {
       if (activeUrl.isNotEmpty) {
         return activeUrl;
       }
-      
+    }
+
+    // Check configured environment URL
+    final envUrl = BackendConfig.configuredUrl;
+    if (envUrl.isNotEmpty) {
+      return envUrl;
+    }
+
+    if (_ref != null) {
       final ollamaUrl = _ref.read(settingsProvider).ollamaUrl;
       if (ollamaUrl.isNotEmpty) {
         try {
           final uri = Uri.parse(ollamaUrl);
           if (uri.host.isNotEmpty) {
             final backendUrl = 'http://${uri.host}:5000';
-            print("💡 Derived Emotion Backend URL from Ollama URL: $backendUrl");
+            print(
+              "💡 Derived Emotion Backend URL from Ollama URL: $backendUrl",
+            );
             return backendUrl;
           }
         } catch (e) {
-          print("[EmotionService] Failed to parse Ollama URL host for backend deriving: $e");
+          print(
+            "[EmotionService] Failed to parse Ollama URL host for backend deriving: $e",
+          );
         }
       }
     }
@@ -80,18 +95,27 @@ class EmotionService {
     print("Emotion request started");
     try {
       final activeUrl = await _findWorkingBackendUrl();
-      print("[EmotionService] Uploading audio to $activeUrl/analyze_audio for DSP processing...");
-      
+      print(
+        "[EmotionService] Uploading audio to $activeUrl/analyze_audio for DSP processing...",
+      );
+
       print("Sending transcript");
-      final List<Map<String, dynamic>> segJsonList = segments.map((seg) => {
-        'startTime': seg.startTime,
-        'endTime': seg.endTime,
-        'speaker': seg.speaker ?? 0,
-        'text': seg.text ?? '',
-      }).toList();
+      final List<Map<String, dynamic>> segJsonList = segments
+          .map(
+            (seg) => {
+              'startTime': seg.startTime,
+              'endTime': seg.endTime,
+              'speaker': seg.speaker ?? 0,
+              'text': seg.text ?? '',
+            },
+          )
+          .toList();
 
       final formData = FormData.fromMap({
-        'audio': await MultipartFile.fromFile(audioFilePath, filename: 'audio.wav'),
+        'audio': await MultipartFile.fromFile(
+          audioFilePath,
+          filename: 'audio.wav',
+        ),
         'segments': jsonEncode(segJsonList),
       });
 
@@ -105,7 +129,7 @@ class EmotionService {
           sendTimeout: const Duration(seconds: 10),
         ),
       );
-      
+
       print("Emotion response received");
       print("[EmotionService] DSP analysis response received.");
       final data = Map<String, dynamic>.from(response.data);

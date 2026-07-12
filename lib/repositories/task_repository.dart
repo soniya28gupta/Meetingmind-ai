@@ -46,13 +46,15 @@ class IsarTaskRepository implements TaskRepository {
   Future<void> updateTaskStatus(int taskId, bool isCompleted) async {
     final task = await _isar.actionItemModels.get(taskId);
     if (task == null || task.userId != _currentUserId) return;
-    
+
     task.isCompleted = isCompleted;
     await _isar.writeTxn(() async {
       await _isar.actionItemModels.put(task);
     });
     FirestoreService.instance.saveTask(task, _currentUserId).catchError((e) {
-      print("[TaskRepository ERROR] updateTaskStatus Firestore sync failed: $e");
+      print(
+        "[TaskRepository ERROR] updateTaskStatus Firestore sync failed: $e",
+      );
     });
   }
 
@@ -75,7 +77,9 @@ class IsarTaskRepository implements TaskRepository {
     await _isar.writeTxn(() async {
       await _isar.actionItemModels.delete(taskId);
     });
-    FirestoreService.instance.deleteTask(taskId, _currentUserId).catchError((e) {
+    FirestoreService.instance.deleteTask(taskId, _currentUserId).catchError((
+      e,
+    ) {
       print("[TaskRepository ERROR] deleteTask Firestore sync failed: $e");
     });
   }
@@ -94,10 +98,6 @@ class IsarTaskRepository implements TaskRepository {
         .count();
     final pending = total - completed;
 
-    return {
-      'total': total,
-      'completed': completed,
-      'pending': pending,
-    };
+    return {'total': total, 'completed': completed, 'pending': pending};
   }
 }

@@ -9,24 +9,30 @@ void main() {
 
   group('Deepgram API key integration', () {
     setUpAll(() async {
-      dotenv.testLoad(fileInput: 'DEEPGRAM_API_KEY=6ecb2124a1a4982a3e3b1c6e5c3eee0ad25d21e1\n');
+      dotenv.testLoad(
+        fileInput:
+            'DEEPGRAM_API_KEY=6ecb2124a1a4982a3e3b1c6e5c3eee0ad25d21e1\n',
+      );
     });
 
-    test('settings provider loads key from env before recording check', () async {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
+    test(
+      'settings provider loads key from env before recording check',
+      () async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
 
-      await container.read(settingsProvider.notifier).ensureLoaded();
-      final settings = container.read(settingsProvider);
-      final key = settings.deepgramKey;
+        await container.read(settingsProvider.notifier).ensureLoaded();
+        final settings = container.read(settingsProvider);
+        final key = settings.deepgramKey;
 
-      logDeepgramKeyDebug(key, source: 'integration_test.settings');
+        logDeepgramKeyDebug(key, source: 'integration_test.settings');
 
-      expect(settings.isLoading, isFalse);
-      expect(key.isEmpty, isFalse);
-      expect(key.length, 40);
-      expect(settings.deepgramKeyFromEnv, isTrue);
-    });
+        expect(settings.isLoading, isFalse);
+        expect(key.isEmpty, isFalse);
+        expect(key.length, 40);
+        expect(settings.deepgramKeyFromEnv, isTrue);
+      },
+    );
 
     test('recording key guard would pass with loaded env key', () async {
       final container = ProviderContainer();
@@ -37,7 +43,8 @@ void main() {
 
       logDeepgramKeyDebug(key, source: 'integration_test.recording_guard');
 
-      final missingKeyError = 'Deepgram API Key is missing. Configure it in settings.';
+      final missingKeyError =
+          'Deepgram API Key is missing. Configure it in settings.';
       final wouldShowError = key.isEmpty;
 
       expect(wouldShowError, isFalse);

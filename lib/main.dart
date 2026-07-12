@@ -47,11 +47,7 @@ void main() async {
     debugPrint('Firebase not configured. Error: $e');
   }
 
-  runApp(
-    const ProviderScope(
-      child: MeetingMindApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MeetingMindApp()));
 }
 
 class MeetingMindApp extends ConsumerWidget {

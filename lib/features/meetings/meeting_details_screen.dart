@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
@@ -24,10 +26,12 @@ class MeetingDetailsScreen extends ConsumerStatefulWidget {
   const MeetingDetailsScreen({super.key, required this.meetingId});
 
   @override
-  ConsumerState<MeetingDetailsScreen> createState() => _MeetingDetailsScreenState();
+  ConsumerState<MeetingDetailsScreen> createState() =>
+      _MeetingDetailsScreenState();
 }
 
-class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> with SingleTickerProviderStateMixin {
+class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final AudioPlayer _audioPlayer = AudioPlayer();
   final _chatController = TextEditingController();
@@ -38,9 +42,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
   double _playbackSpeed = 1.0;
   bool _audioAvailable = false;
   bool _isGeneratingSummary = false;
+  bool _showSpeakerLabels = true;
   String _statusFilter = 'All';
   String _priorityFilter = 'All';
-  
+
   Duration _audioPosition = Duration.zero;
   Duration _audioDuration = Duration.zero;
   bool _isPlaying = false;
@@ -62,13 +67,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     // Get transcript text and check if empty
     final transcript = meeting.transcript.value;
     final fullTranscriptText = transcript != null
-        ? transcript.segments.toList().map((e) => 'Speaker ${e.speaker}: ${e.text}').join('\n')
+        ? transcript.segments
+              .toList()
+              .map((e) => 'Speaker ${e.speaker}: ${e.text}')
+              .join('\n')
         : '';
 
     if (fullTranscriptText.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Transcript is empty. Speak or import audio to generate a transcript first.'),
+          content: Text(
+            '⚠️ Transcript is empty. Speak or import audio to generate a transcript first.',
+          ),
           backgroundColor: AppColors.warning,
           duration: Duration(seconds: 4),
         ),
@@ -79,17 +89,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     setState(() => _isGeneratingSummary = true);
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🤖 Generating Analysis...'), duration: Duration(seconds: 4)),
+        const SnackBar(
+          content: Text('🤖 Generating Analysis...'),
+          duration: Duration(seconds: 4),
+        ),
       );
-      
+
       await ref.read(recordingProvider.notifier).regenerateSummary(meeting.id);
-      
+
       // Force refresh the stream provider to show the new summary immediately
       ref.invalidate(meetingDetailsStreamProvider(meeting.id));
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Analysis Complete'), backgroundColor: AppColors.success),
+          const SnackBar(
+            content: Text('✅ Analysis Complete'),
+            backgroundColor: AppColors.success,
+          ),
         );
       }
     } catch (e) {
@@ -112,8 +128,12 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
   }
 
   Future<void> _initAudio() async {
-    final meeting = await ref.read(meetingRepositoryProvider).getMeetingById(widget.meetingId);
-    if (meeting != null && meeting.audioFilePath != null && meeting.audioFilePath!.isNotEmpty) {
+    final meeting = await ref
+        .read(meetingRepositoryProvider)
+        .getMeetingById(widget.meetingId);
+    if (meeting != null &&
+        meeting.audioFilePath != null &&
+        meeting.audioFilePath!.isNotEmpty) {
       try {
         await _audioPlayer.setFilePath(meeting.audioFilePath!);
         setState(() => _audioAvailable = true);
@@ -179,36 +199,44 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
 
   @override
   Widget build(BuildContext context) {
-    final meetingDetailAsync = ref.watch(meetingDetailsStreamProvider(widget.meetingId));
+    final meetingDetailAsync = ref.watch(
+      meetingDetailsStreamProvider(widget.meetingId),
+    );
 
-    ref.listen<AsyncValue<List<ChatMessageModel>>>(meetingChatProvider(widget.meetingId), (previous, next) {
-      final prevList = previous?.value ?? [];
-      final nextList = next.value ?? [];
-      if (nextList.length > prevList.length) {
-        final lastMsg = nextList.last;
-        if (!lastMsg.isUser) {
-          if (lastMsg.message == '🤖 AI is thinking...') {
-            // No action needed for thinking placeholder
-          } else if (lastMsg.message?.startsWith('⚠️ Failed to get response') ?? false) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('⚠️ Failed to get response'),
-                backgroundColor: AppColors.error,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✅ Response received'),
-                backgroundColor: AppColors.success,
-                duration: Duration(seconds: 2),
-              ),
-            );
+    ref.listen<AsyncValue<List<ChatMessageModel>>>(
+      meetingChatProvider(widget.meetingId),
+      (previous, next) {
+        final prevList = previous?.value ?? [];
+        final nextList = next.value ?? [];
+        if (nextList.length > prevList.length) {
+          final lastMsg = nextList.last;
+          if (!lastMsg.isUser) {
+            if (lastMsg.message == '🤖 AI is thinking...') {
+              // No action needed for thinking placeholder
+            } else if (lastMsg.message?.startsWith(
+                  '⚠️ Failed to get response',
+                ) ??
+                false) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('⚠️ Failed to get response'),
+                  backgroundColor: AppColors.error,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Response received'),
+                  backgroundColor: AppColors.success,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
           }
         }
-      }
-    });
+      },
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -239,7 +267,13 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(m?.title ?? 'Meeting Details', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  m?.title ?? 'Meeting Details',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -283,13 +317,31 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     onSelected: (val) {
                       if (val == 'pdf') {
                         ExportHelper.shareMeetingPdf(meeting);
+                      } else if (val == 'docx') {
+                        ExportHelper.shareMeetingDocx(meeting);
+                      } else if (val == 'markdown') {
+                        ExportHelper.shareMeetingMarkdown(meeting);
                       } else {
                         ExportHelper.shareMeetingText(meeting);
                       }
                     },
                     itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'pdf', child: Text('Share PDF Report')),
-                      const PopupMenuItem(value: 'text', child: Text('Share Summary Text')),
+                      const PopupMenuItem(
+                        value: 'pdf',
+                        child: Text('Export PDF Report'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'docx',
+                        child: Text('Export Word DOCX'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'markdown',
+                        child: Text('Export Markdown'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'text',
+                        child: Text('Export Plain Text'),
+                      ),
                     ],
                   )
                 : const SizedBox(),
@@ -300,9 +352,16 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
-          indicatorColor: AppColors.secondary,
-          labelColor: AppColors.secondary,
+          indicator: UnderlineTabIndicator(
+            borderSide: const BorderSide(color: AppColors.accent, width: 3),
+            insets: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+          labelColor: AppColors.accent,
           unselectedLabelColor: AppColors.textMuted,
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
           tabs: const [
             Tab(text: '🎙️ Transcript'),
             Tab(text: '📋 Summary'),
@@ -312,167 +371,458 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           ],
         ),
       ),
-      body: meetingDetailAsync.when(
-        data: (meeting) {
-          if (meeting == null) {
-            return const Center(child: Text('Meeting not found'));
-          }
+      body: FuturisticBackground(
+        child: meetingDetailAsync.when(
+          data: (meeting) {
+            if (meeting == null) {
+              return const Center(child: Text('Meeting not found'));
+            }
 
-          return Column(
-            children: [
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildTranscriptTab(meeting),
-                    _buildSummaryTab(meeting),
-                    _buildTasksTab(meeting),
-                    _buildChatTab(meeting),
-                    _buildAudioTab(meeting),
-                  ],
+            return Column(
+              children: [
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildTranscriptTab(meeting),
+                      _buildSummaryTab(meeting),
+                      _buildTasksTab(meeting),
+                      _buildChatTab(meeting),
+                      _buildAudioTab(meeting),
+                    ],
+                  ),
                 ),
-              ),
-              // Persistent Mini Player at bottom
-              if (_audioAvailable && MediaQuery.of(context).viewInsets.bottom == 0) _buildMiniPlayer(),
-            ],
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('Error loading meeting: $err', style: const TextStyle(color: AppColors.error))),
+                // Persistent Mini Player at bottom
+                if (_audioAvailable &&
+                    MediaQuery.of(context).viewInsets.bottom == 0)
+                  _buildMiniPlayer(),
+              ],
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(
+            child: Text(
+              'Error loading meeting: $err',
+              style: const TextStyle(color: AppColors.error),
+            ),
+          ),
+        ),
       ),
     );
   }
 
   // --- TAB A: TRANSCRIPT ---
   Widget _buildTranscriptTab(MeetingModel meeting) {
-    final segments = meeting.transcript.value?.segments.toList() ?? [];
-    
-    // Filter segments based on keyword search
-    final filteredSegments = segments.where((seg) {
-      if (_searchQuery.isEmpty) return true;
-      return seg.text?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false;
-    }).toList();
+    final allSegments = meeting.transcript.value?.segments.toList() ?? [];
+    final audioPositionSecs = _audioPosition.inMilliseconds / 1000.0;
+
+    // --- Group consecutive same-speaker segments into speaker blocks ---
+    final List<_SpeakerBlock> blocks = [];
+    if (allSegments.isNotEmpty) {
+      _SpeakerBlock current = _SpeakerBlock(
+        speaker: allSegments.first.speaker ?? 1,
+        profile: allSegments.first.speakerProfile.value,
+        sentences: [allSegments.first],
+      );
+      for (int i = 1; i < allSegments.length; i++) {
+        final seg = allSegments[i];
+        if (seg.speaker == current.speaker) {
+          current.sentences.add(seg);
+        } else {
+          blocks.add(current);
+          current = _SpeakerBlock(
+            speaker: seg.speaker ?? 1,
+            profile: seg.speakerProfile.value,
+            sentences: [seg],
+          );
+        }
+      }
+      blocks.add(current);
+    }
+
+    // Check if diarization exists (more than 1 distinct speaker)
+    final distinctSpeakers = allSegments.map((s) => s.speaker).toSet();
+    final hasDiarization = distinctSpeakers.length > 1;
+
+    // Build the full plain text for copy/share
+    String buildFullText() {
+      if (!hasDiarization || !_showSpeakerLabels) {
+        return allSegments.map((s) => s.text ?? '').join(' ');
+      }
+      return blocks
+          .map((b) {
+            final name = b.profile?.name ?? 'Speaker ${b.speaker}';
+            final text = b.sentences.map((s) => s.text ?? '').join(' ');
+            return '$name:\n$text';
+          })
+          .join('\n\n');
+    }
 
     return Column(
       children: [
-        // Search bar
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: TextFormField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search transcript...',
-              prefixIcon: const Icon(Icons.search, color: AppColors.textMuted),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, color: AppColors.textMuted),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                    )
-                  : null,
-            ),
-            onChanged: (val) {
-              setState(() => _searchQuery = val);
-            },
+        // ── Search bar + action toolbar ──
+        Container(
+          color: AppColors.surface,
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+          child: Column(
+            children: [
+              // Search bar
+              TextFormField(
+                controller: _searchController,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search transcript...',
+                  hintStyle: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: AppColors.textMuted,
+                    size: 20,
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(
+                            Icons.clear,
+                            color: AppColors.textMuted,
+                            size: 18,
+                          ),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: AppColors.surfaceLight,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+              const SizedBox(height: 8),
+              // Action row
+              Row(
+                children: [
+                  _TranscriptActionButton(
+                    icon: Icons.copy_rounded,
+                    label: 'Copy',
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: buildFullText()));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('📋 Transcript copied to clipboard'),
+                          backgroundColor: AppColors.success,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  if (hasDiarization)
+                    _TranscriptActionButton(
+                      icon: _showSpeakerLabels
+                          ? Icons.person_rounded
+                          : Icons.person_off_rounded,
+                      label: _showSpeakerLabels
+                          ? 'Hide Speakers'
+                          : 'Show Speakers',
+                      onTap: () => setState(
+                        () => _showSpeakerLabels = !_showSpeakerLabels,
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
+        const Divider(height: 1, color: AppColors.surfaceLight),
 
-        // List
+        // ── Main continuous transcript ──
         Expanded(
-          child: filteredSegments.isEmpty
-              ? const Center(child: Text('No matching transcript lines found', style: TextStyle(color: AppColors.textMuted)))
-              : ListView.separated(
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    bottom: _audioAvailable ? 110.0 : 16.0,
-                  ),
-                  itemCount: filteredSegments.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, idx) {
-                    final seg = filteredSegments[idx];
-                    final startMin = (seg.startTime / 60).toInt();
-                    final startSec = (seg.startTime % 60).toInt().toString().padLeft(2, '0');
-                    final timestamp = '$startMin:$startSec';
-                    
-                    final profile = seg.speakerProfile.value;
-                    final String name = profile?.name ?? 'Speaker ${seg.speaker}';
-                    final String emoji = profile?.avatarEmoji ?? '👤';
-                    final int colorHex = profile?.colorValue ?? 0xFF9C27B0;
-                    final Color color = Color(colorHex);
+          child: allSegments.isEmpty
+              ? _buildEmptyTranscript()
+              : SelectionArea(
+                  child: ListView.builder(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      16,
+                      20,
+                      _audioAvailable ? 120.0 : 32.0,
+                    ),
+                    itemCount: (!hasDiarization || !_showSpeakerLabels)
+                        ? 1
+                        : blocks.length,
+                    itemBuilder: (context, idx) {
+                      // ── Single-speaker or labels-off: one continuous article ──
+                      if (!hasDiarization || !_showSpeakerLabels) {
+                        return _buildContinuousDocument(
+                          allSegments,
+                          audioPositionSecs,
+                        );
+                      }
 
-                    return InkWell(
-                      onTap: () {
-                        _seekTo(seg.startTime);
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
-                        child: Row(
+                      // ── Multi-speaker: one block per speaker turn ──
+                      final block = blocks[idx];
+                      final profile = block.profile;
+                      final String name =
+                          profile?.name ?? 'Speaker ${block.speaker}';
+                      final String emoji = profile?.avatarEmoji ?? '🎙️';
+                      final Color color = Color(
+                        profile?.colorValue ?? 0xFF9C27B0,
+                      );
+                      final blockStart = block.sentences.first.startTime;
+                      final startMin = (blockStart / 60).toInt();
+                      final startSec = (blockStart % 60)
+                          .toInt()
+                          .toString()
+                          .padLeft(2, '0');
+
+                      // Is any sentence in this block currently active?
+                      final isActiveBlock = block.sentences.any(
+                        (s) =>
+                            audioPositionSecs >= s.startTime &&
+                            audioPositionSecs < s.endTime,
+                      );
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Speaker header row
                             GestureDetector(
                               onTap: () {
-                                if (profile != null) {
+                                if (profile != null)
                                   _showSpeakerProfileDialog(profile);
-                                }
                               },
-                              child: CircleAvatar(
-                                radius: 20,
-                                backgroundColor: color.withValues(alpha: 0.15),
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      GestureDetector(
-                                        onTap: () {
-                                          if (profile != null) {
-                                            _showSpeakerProfileDialog(profile);
-                                          }
-                                        },
-                                        child: Text(
-                                          name,
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: color,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '[$timestamp]',
-                                        style: const TextStyle(fontFamily: 'monospace', color: AppColors.textMuted, fontSize: 10),
-                                      ),
-                                    ],
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: color.withValues(
+                                      alpha: 0.15,
+                                    ),
+                                    child: Text(
+                                      emoji,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    seg.text ?? '',
-                                    style: const TextStyle(fontSize: 14, height: 1.4, color: AppColors.textPrimary),
+                                    name,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: color,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '[$startMin:$startSec]',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.textMuted,
+                                      fontFamily: 'monospace',
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            // Sentence-level rich text for this block
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: isActiveBlock
+                                  ? const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    )
+                                  : EdgeInsets.zero,
+                              decoration: isActiveBlock
+                                  ? BoxDecoration(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.07,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        width: 1,
+                                      ),
+                                    )
+                                  : null,
+                              child: _buildInlineRichText(
+                                block.sentences,
+                                audioPositionSecs,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
         ),
       ],
+    );
+  }
+
+  /// Builds a single continuous document for single-speaker or labels-off mode.
+  Widget _buildContinuousDocument(
+    List<TranscriptSegmentModel> segments,
+    double audioPositionSecs,
+  ) {
+    return _buildInlineRichText(segments, audioPositionSecs);
+  }
+
+  /// Builds a RichText widget that renders all given segments as an inline
+  /// paragraph with active-sentence highlighting and search-query highlighting.
+  Widget _buildInlineRichText(
+    List<TranscriptSegmentModel> segments,
+    double audioPositionSecs,
+  ) {
+    final List<TextSpan> spans = [];
+    for (int i = 0; i < segments.length; i++) {
+      final seg = segments[i];
+      final text = (seg.text ?? '').trim();
+      if (text.isEmpty) continue;
+
+      // Active sentence = audio playback within this segment's time range
+      final bool isActive =
+          audioPositionSecs >= seg.startTime && audioPositionSecs < seg.endTime;
+
+      // Search highlight
+      final bool hasMatch =
+          _searchQuery.isNotEmpty &&
+          text.toLowerCase().contains(_searchQuery.toLowerCase());
+
+      if (hasMatch && _searchQuery.isNotEmpty) {
+        // Split into matched and unmatched parts
+        final lowerText = text.toLowerCase();
+        int cursor = 0;
+        while (cursor < text.length) {
+          final matchIdx = lowerText.indexOf(
+            _searchQuery.toLowerCase(),
+            cursor,
+          );
+          if (matchIdx == -1) {
+            spans.add(
+              TextSpan(
+                text: text.substring(cursor),
+                style: _sentenceStyle(isActive),
+                recognizer: _seekRecognizer(seg.startTime),
+              ),
+            );
+            break;
+          }
+          if (matchIdx > cursor) {
+            spans.add(
+              TextSpan(
+                text: text.substring(cursor, matchIdx),
+                style: _sentenceStyle(isActive),
+                recognizer: _seekRecognizer(seg.startTime),
+              ),
+            );
+          }
+          spans.add(
+            TextSpan(
+              text: text.substring(matchIdx, matchIdx + _searchQuery.length),
+              style: _sentenceStyle(isActive).copyWith(
+                backgroundColor: Colors.yellow.shade700.withValues(alpha: 0.55),
+                color: Colors.black,
+              ),
+              recognizer: _seekRecognizer(seg.startTime),
+            ),
+          );
+          cursor = matchIdx + _searchQuery.length;
+        }
+      } else {
+        spans.add(
+          TextSpan(
+            text: text,
+            style: _sentenceStyle(isActive),
+            recognizer: _seekRecognizer(seg.startTime),
+          ),
+        );
+      }
+
+      // Add a space between sentences
+      if (i < segments.length - 1) {
+        spans.add(const TextSpan(text: ' '));
+      }
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+      textAlign: TextAlign.left,
+    );
+  }
+
+  TextStyle _sentenceStyle(bool isActive) {
+    if (isActive) {
+      return const TextStyle(
+        fontSize: 16,
+        height: 1.7,
+        color: AppColors.accent,
+        fontWeight: FontWeight.w600,
+        backgroundColor: Color(0x18C084FC),
+      );
+    }
+    return const TextStyle(
+      fontSize: 16,
+      height: 1.7,
+      color: AppColors.textPrimary,
+      fontWeight: FontWeight.normal,
+    );
+  }
+
+  // ignore: deprecated_member_use
+  TapGestureRecognizer _seekRecognizer(double startTime) {
+    final recognizer = TapGestureRecognizer();
+    recognizer.onTap = () => _seekTo(startTime);
+    return recognizer;
+  }
+
+  Widget _buildEmptyTranscript() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.mic_none_rounded,
+            size: 56,
+            color: AppColors.textMuted.withValues(alpha: 0.4),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No transcript yet',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Record a meeting or import an audio file\nto generate a transcript.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -480,7 +830,7 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     final nameController = TextEditingController(text: profile.name);
     final emojiController = TextEditingController(text: profile.avatarEmoji);
     int selectedColor = profile.colorValue ?? 0xFF9C27B0;
-    
+
     showDialog(
       context: context,
       builder: (context) {
@@ -488,8 +838,16 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: AppColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('Edit Speaker Profile', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Edit Speaker Profile',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -501,8 +859,12 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       decoration: const InputDecoration(
                         labelText: 'Speaker Name',
                         labelStyle: TextStyle(color: AppColors.textMuted),
-                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
-                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.primary)),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white12),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primary),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -512,42 +874,58 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       decoration: const InputDecoration(
                         labelText: 'Avatar Emoji',
                         labelStyle: TextStyle(color: AppColors.textMuted),
-                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
-                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.primary)),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white12),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primary),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const Text('Select Theme Color:', style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Select Theme Color:',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: [
-                        0xFF9C27B0, // Deep Purple
-                        0xFF2196F3, // Deep Blue
-                        0xFF4CAF50, // Neon Green
-                        0xFFFFC107, // Amber Yellow
-                        0xFFFF5722, // Coral Pink
-                        0xFF009688, // Teal
-                        0xFFFF9800, // Orange
-                        0xFF3F51B5, // Indigo
-                      ].map((colorHex) {
-                        final isSelected = selectedColor == colorHex;
-                        return GestureDetector(
-                          onTap: () {
-                            setDialogState(() {
-                              selectedColor = colorHex;
-                            });
-                          },
-                          child: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Color(colorHex),
-                            child: isSelected
-                                ? const Icon(Icons.check, color: Colors.black, size: 16)
-                                : null,
-                          ),
-                        );
-                      }).toList(),
+                      children:
+                          [
+                            0xFF9C27B0, // Deep Purple
+                            0xFF2196F3, // Deep Blue
+                            0xFF4CAF50, // Neon Green
+                            0xFFFFC107, // Amber Yellow
+                            0xFFFF5722, // Coral Pink
+                            0xFF009688, // Teal
+                            0xFFFF9800, // Orange
+                            0xFF3F51B5, // Indigo
+                          ].map((colorHex) {
+                            final isSelected = selectedColor == colorHex;
+                            return GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedColor = colorHex;
+                                });
+                              },
+                              child: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: Color(colorHex),
+                                child: isSelected
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.black,
+                                        size: 16,
+                                      )
+                                    : null,
+                              ),
+                            );
+                          }).toList(),
                     ),
                   ],
                 ),
@@ -555,19 +933,28 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: () async {
                     if (nameController.text.trim().isEmpty) return;
                     profile.name = nameController.text.trim();
-                    profile.avatarEmoji = emojiController.text.trim().isNotEmpty ? emojiController.text.trim() : '👤';
+                    profile.avatarEmoji = emojiController.text.trim().isNotEmpty
+                        ? emojiController.text.trim()
+                        : '👤';
                     profile.colorValue = selectedColor;
-                    
-                    await ref.read(speakerServiceProvider).updateSpeakerProfile(profile);
+
+                    await ref
+                        .read(speakerServiceProvider)
+                        .updateSpeakerProfile(profile);
                     if (context.mounted) {
                       Navigator.pop(context);
-                      ref.invalidate(meetingDetailsStreamProvider(widget.meetingId));
+                      ref.invalidate(
+                        meetingDetailsStreamProvider(widget.meetingId),
+                      );
                     }
                   },
                   child: const Text('Save'),
@@ -592,9 +979,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             Text(
               '🤖 Generating AI Summary...',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -609,15 +996,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     final summary = meeting.summary.value;
     final decisions = meeting.decisions.toList();
 
-    final segments = meeting.transcript.value?.segments.toList() ?? <TranscriptSegmentModel>[];
+    final segments =
+        meeting.transcript.value?.segments.toList() ??
+        <TranscriptSegmentModel>[];
 
     // Fetch persistent Speaker details from Isar
     final isar = IsarDatabase.instance.isar;
-    final speakerEmotions = isar.speakerEmotionModels.filter().meeting((m) => m.idEqualTo(meeting.id)).findAllSync();
+    final speakerEmotions = isar.speakerEmotionModels
+        .filter()
+        .meeting((m) => m.idEqualTo(meeting.id))
+        .findAllSync();
     for (final e in speakerEmotions) {
       e.speakerProfile.loadSync();
     }
-    final speakerAnalytics = isar.speakerAnalyticsModels.filter().meeting((m) => m.idEqualTo(meeting.id)).findAllSync();
+    final speakerAnalytics = isar.speakerAnalyticsModels
+        .filter()
+        .meeting((m) => m.idEqualTo(meeting.id))
+        .findAllSync();
     for (final a in speakerAnalytics) {
       a.speakerProfile.loadSync();
     }
@@ -631,19 +1026,28 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       for (int i = 0; i < numIntervals; i++) {
         final start = i * intervalSize;
         final end = math.min((i + 1) * intervalSize, duration);
-        final segsInRange = segments.where((s) => s.startTime < end && s.endTime > start).toList();
-        
+        final segsInRange = segments
+            .where((s) => s.startTime < end && s.endTime > start)
+            .toList();
+
         String emotion = 'Neutral';
         if (segsInRange.isNotEmpty) {
           final firstSeg = segsInRange.first;
-          final spkEmotionObj = speakerEmotions.where((e) => e.speakerProfile.value?.name == firstSeg.speakerProfile.value?.name).toList();
+          final spkEmotionObj = speakerEmotions
+              .where(
+                (e) =>
+                    e.speakerProfile.value?.name ==
+                    firstSeg.speakerProfile.value?.name,
+              )
+              .toList();
           if (spkEmotionObj.isNotEmpty) {
             emotion = spkEmotionObj.first.emotion ?? 'Neutral';
           }
         }
-        
+
         timelineIntervals.add({
-          'label': '${(start / 60).toInt().toString().padLeft(2, '0')}:${(start % 60).toInt().toString().padLeft(2, '0')} - ${(end / 60).toInt().toString().padLeft(2, '0')}:${(end % 60).toInt().toString().padLeft(2, '0')}',
+          'label':
+              '${(start / 60).toInt().toString().padLeft(2, '0')}:${(start % 60).toInt().toString().padLeft(2, '0')} - ${(end / 60).toInt().toString().padLeft(2, '0')}:${(end % 60).toInt().toString().padLeft(2, '0')}',
           'emotion': emotion,
         });
       }
@@ -652,14 +1056,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     // Calculate speaking duration per speaker (Speaker Insights)
     final Map<int, double> speakerDurations = {};
     double totalDuration = 0.0;
-    
+
     for (final seg in segments) {
       final speaker = seg.speaker ?? 0;
-      final segDuration = (seg.endTime - seg.startTime).clamp(0.0, double.infinity);
-      speakerDurations[speaker] = (speakerDurations[speaker] ?? 0.0) + segDuration;
+      final segDuration = (seg.endTime - seg.startTime).clamp(
+        0.0,
+        double.infinity,
+      );
+      speakerDurations[speaker] =
+          (speakerDurations[speaker] ?? 0.0) + segDuration;
       totalDuration += segDuration;
     }
-    
+
     final List<MapEntry<int, double>> participationList = [];
     if (totalDuration > 0) {
       speakerDurations.forEach((speaker, spkDur) {
@@ -673,19 +1081,27 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     IconData categoryIcon = Icons.dashboard_customize_rounded;
     Color categoryColor = AppColors.primary;
     final titleLower = (meeting.title ?? '').toLowerCase();
-    if (titleLower.contains('standup') || titleLower.contains('daily') || titleLower.contains('sync')) {
+    if (titleLower.contains('standup') ||
+        titleLower.contains('daily') ||
+        titleLower.contains('sync')) {
       category = 'Standup';
       categoryIcon = Icons.loop_rounded;
       categoryColor = AppColors.secondary;
-    } else if (titleLower.contains('review') || titleLower.contains('demo') || titleLower.contains('retrospective')) {
+    } else if (titleLower.contains('review') ||
+        titleLower.contains('demo') ||
+        titleLower.contains('retrospective')) {
       category = 'Review';
       categoryIcon = Icons.rate_review_rounded;
       categoryColor = AppColors.accent;
-    } else if (titleLower.contains('planning') || titleLower.contains('roadmap') || titleLower.contains('sprint')) {
+    } else if (titleLower.contains('planning') ||
+        titleLower.contains('roadmap') ||
+        titleLower.contains('sprint')) {
       category = 'Planning';
       categoryIcon = Icons.calendar_today_rounded;
       categoryColor = AppColors.success;
-    } else if (titleLower.contains('brainstorm') || titleLower.contains('idea') || titleLower.contains('design')) {
+    } else if (titleLower.contains('brainstorm') ||
+        titleLower.contains('idea') ||
+        titleLower.contains('design')) {
       category = 'Brainstorm';
       categoryIcon = Icons.psychology_rounded;
       categoryColor = AppColors.warning;
@@ -747,11 +1163,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.auto_awesome_rounded, color: AppColors.textMuted, size: 48),
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: AppColors.textMuted,
+                    size: 48,
+                  ),
                   const SizedBox(height: 16),
                   const Text(
                     'AI Summary not generated',
-                    style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
@@ -767,13 +1190,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if (summary?.executiveSummary != null) ...[
               Row(
                 children: [
-                  const Icon(Icons.summarize_outlined, color: AppColors.secondary, size: 20),
+                  const Icon(
+                    Icons.summarize_outlined,
+                    color: AppColors.secondary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Executive Summary',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -790,7 +1217,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   ),
                   borderRadius: BorderRadius.circular(16),
                   border: Border(
-                    left: const BorderSide(color: AppColors.secondary, width: 4),
+                    left: const BorderSide(
+                      color: AppColors.secondary,
+                      width: 4,
+                    ),
                     top: BorderSide(color: Colors.white10),
                     right: BorderSide(color: Colors.white10),
                     bottom: BorderSide(color: Colors.white10),
@@ -806,7 +1236,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   summary!.executiveSummary!,
-                  style: const TextStyle(height: 1.5, fontSize: 14, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -822,19 +1256,26 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if (timelineIntervals.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.timeline_rounded, color: AppColors.secondary, size: 20),
+                  const Icon(
+                    Icons.timeline_rounded,
+                    color: AppColors.secondary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Visual Emotion Timeline',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
               GlassCard(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 14,
+                ),
                 borderColor: AppColors.secondary.withValues(alpha: 0.15),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -845,11 +1286,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       final Color labelColor = getEmotionColor(emo);
                       return Container(
                         margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: labelColor.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: labelColor.withValues(alpha: 0.25), width: 1.2),
+                          border: Border.all(
+                            color: labelColor.withValues(alpha: 0.25),
+                            width: 1.2,
+                          ),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -858,12 +1305,20 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                             const SizedBox(height: 6),
                             Text(
                               emo,
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: labelColor),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: labelColor,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               interval['label'] as String,
-                              style: const TextStyle(fontSize: 8, color: AppColors.textMuted, fontFamily: 'monospace'),
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: AppColors.textMuted,
+                                fontFamily: 'monospace',
+                              ),
                             ),
                           ],
                         ),
@@ -879,13 +1334,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if ((summary?.meetingNotes ?? '').isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.notes_rounded, color: AppColors.primary, size: 20),
+                  const Icon(
+                    Icons.notes_rounded,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Detailed Notes',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -894,7 +1353,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 borderColor: AppColors.primary.withValues(alpha: 0.15),
                 child: Text(
                   summary?.meetingNotes ?? '',
-                  style: const TextStyle(height: 1.5, fontSize: 14, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -904,13 +1367,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if ((summary?.keyTakeaways ?? '').isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.stars_rounded, color: AppColors.accent, size: 20),
+                  const Icon(
+                    Icons.stars_rounded,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Speaker-Specific Takeaways',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -926,12 +1393,118 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.accent.withValues(alpha: 0.2), width: 1),
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.2),
+                    width: 1,
+                  ),
                 ),
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   summary?.keyTakeaways ?? '',
-                  style: const TextStyle(height: 1.5, fontSize: 14, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // Risks & Concerns Card
+            if ((summary?.risks ?? '').isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppColors.error,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Risks & Roadblocks',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              GlassCard(
+                borderColor: AppColors.error.withValues(alpha: 0.15),
+                child: Text(
+                  summary?.risks ?? '',
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // Next Steps Card
+            if ((summary?.followUps ?? '').isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(
+                    Icons.next_plan_outlined,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Next Steps',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              GlassCard(
+                borderColor: AppColors.primary.withValues(alpha: 0.15),
+                child: Text(
+                  summary?.followUps ?? '',
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // Important Dates & Deadlines Card
+            if ((summary?.deadlines ?? '').isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(
+                    Icons.date_range_rounded,
+                    color: AppColors.secondary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Important Dates & Deadlines',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              GlassCard(
+                borderColor: AppColors.secondary.withValues(alpha: 0.15),
+                child: Text(
+                  summary?.deadlines ?? '',
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -941,13 +1514,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if (decisions.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.gavel_rounded, color: AppColors.success, size: 20),
+                  const Icon(
+                    Icons.gavel_rounded,
+                    color: AppColors.success,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Important Decisions',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -961,12 +1538,20 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.check_circle_outline_rounded, color: AppColors.success, size: 18),
+                          const Icon(
+                            Icons.check_circle_outline_rounded,
+                            color: AppColors.success,
+                            size: 18,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               d.description ?? '',
-                              style: const TextStyle(fontSize: 14, height: 1.4, color: AppColors.textPrimary),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                height: 1.4,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ),
                         ],
@@ -982,13 +1567,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if (speakerEmotions.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.face_rounded, color: AppColors.accent, size: 20),
+                  const Icon(
+                    Icons.face_rounded,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Speaker Mood & Observations',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -998,19 +1587,24 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 final name = profile?.name ?? 'Speaker';
                 final emoji = profile?.avatarEmoji ?? '👤';
                 final color = Color(profile?.colorValue ?? 0xFF9C27B0);
-                
+
                 final mood = se.emotion ?? 'Neutral';
                 final moodEmoji = getEmotionEmoji(mood);
-                
-                String observation = "Steady, moderate pitch, highly stable and clear delivery.";
+
+                String observation =
+                    "Steady, moderate pitch, highly stable and clear delivery.";
                 if (mood == "Happy" || mood == "Excited") {
-                  observation = "Positive tone, highly engaged, energetic participation.";
+                  observation =
+                      "Positive tone, highly engaged, energetic participation.";
                 } else if (mood == "Frustrated") {
-                  observation = "Tense voice tone, rapid speaking rate, possible friction.";
+                  observation =
+                      "Tense voice tone, rapid speaking rate, possible friction.";
                 } else if (mood == "Thinking") {
-                  observation = "Frequent pauses, introspective tone, deliberate speaking rate.";
+                  observation =
+                      "Frequent pauses, introspective tone, deliberate speaking rate.";
                 } else if (mood == "Nervous" || mood == "Concerned") {
-                  observation = "Shaky pitch fluctuations, tentative energy levels.";
+                  observation =
+                      "Shaky pitch fluctuations, tentative energy levels.";
                 }
 
                 return Card(
@@ -1028,7 +1622,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                         CircleAvatar(
                           radius: 18,
                           backgroundColor: color.withValues(alpha: 0.15),
-                          child: Text(emoji, style: const TextStyle(fontSize: 16)),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -1036,22 +1633,35 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     name,
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: color,
+                                    ),
                                   ),
                                   Text(
                                     '$moodEmoji $mood (${(se.confidence * 100).toStringAsFixed(0)}%)',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: getEmotionColor(mood)),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: getEmotionColor(mood),
+                                    ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 observation,
-                                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                  height: 1.4,
+                                ),
                               ),
                             ],
                           ),
@@ -1068,13 +1678,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             if (participationList.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.pie_chart_outline_rounded, color: AppColors.secondary, size: 20),
+                  const Icon(
+                    Icons.pie_chart_outline_rounded,
+                    color: AppColors.secondary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Speaker Participation Insights',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -1089,14 +1703,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       final double spkDur = speakerDurations[entry.key] ?? 0.0;
                       final spkMin = (spkDur / 60).toInt();
                       final spkSec = (spkDur % 60).toInt();
-                      final spkTimeStr = spkMin > 0 ? '${spkMin}m ${spkSec}s' : '${spkSec}s';
-                      
-                      final matchingSegments = segments.where((s) => s.speaker == entry.key).toList();
-                      final profile = matchingSegments.isNotEmpty ? matchingSegments.first.speakerProfile.value : null;
-                      final String name = profile?.name ?? 'Speaker ${entry.key}';
+                      final spkTimeStr = spkMin > 0
+                          ? '${spkMin}m ${spkSec}s'
+                          : '${spkSec}s';
+
+                      final matchingSegments = segments
+                          .where((s) => s.speaker == entry.key)
+                          .toList();
+                      final profile = matchingSegments.isNotEmpty
+                          ? matchingSegments.first.speakerProfile.value
+                          : null;
+                      final String name =
+                          profile?.name ?? 'Speaker ${entry.key}';
                       final String emoji = profile?.avatarEmoji ?? '👤';
-                      final Color color = Color(profile?.colorValue ?? 0xFF9C27B0);
-                      
+                      final Color color = Color(
+                        profile?.colorValue ?? 0xFF9C27B0,
+                      );
+
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Row(
@@ -1115,15 +1738,24 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         name,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: AppColors.textPrimary,
+                                        ),
                                       ),
                                       Text(
                                         '$spkTimeStr ($percent%)',
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: color,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -1132,10 +1764,14 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                     borderRadius: BorderRadius.circular(4),
                                     child: LinearProgressIndicator(
                                       value: entry.value,
-                                      backgroundColor: Colors.white.withValues(alpha: 0.05),
+                                      backgroundColor: Colors.white.withValues(
+                                        alpha: 0.05,
+                                      ),
                                       color: color,
                                       minHeight: 6,
-                                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        color,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1154,13 +1790,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             // Voice Tone Analysis Section
             Row(
               children: [
-                const Icon(Icons.psychology_outlined, color: AppColors.secondary, size: 20),
+                const Icon(
+                  Icons.psychology_outlined,
+                  color: AppColors.secondary,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Overall Tone Observation',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -1174,28 +1814,47 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
 
   String getEmotionEmoji(String emotion) {
     switch (emotion.toLowerCase()) {
-      case 'happy': return '😀';
-      case 'excited': return '🔥';
-      case 'confident': return '💪';
-      case 'calm': return '😌';
-      case 'concerned': return '😟';
-      case 'frustrated': return '😡';
-      case 'bored': return '😴';
-      case 'nervous': return '😨';
-      case 'thinking': return '🤔';
-      default: return '😐';
+      case 'happy':
+        return '😀';
+      case 'excited':
+        return '🔥';
+      case 'confident':
+        return '💪';
+      case 'calm':
+        return '😌';
+      case 'concerned':
+        return '😟';
+      case 'frustrated':
+        return '😡';
+      case 'bored':
+        return '😴';
+      case 'nervous':
+        return '😨';
+      case 'thinking':
+        return '🤔';
+      default:
+        return '😐';
     }
   }
 
   Color getEmotionColor(String emotion) {
     switch (emotion.toLowerCase()) {
-      case 'happy': case 'excited': return AppColors.secondary;
-      case 'confident': return AppColors.primary;
-      case 'calm': return AppColors.success;
-      case 'concerned': case 'nervous': return AppColors.warning;
-      case 'frustrated': return AppColors.error;
-      case 'thinking': return AppColors.accent;
-      default: return AppColors.textMuted;
+      case 'happy':
+      case 'excited':
+        return AppColors.secondary;
+      case 'confident':
+        return AppColors.primary;
+      case 'calm':
+        return AppColors.success;
+      case 'concerned':
+      case 'nervous':
+        return AppColors.warning;
+      case 'frustrated':
+        return AppColors.error;
+      case 'thinking':
+        return AppColors.accent;
+      default:
+        return AppColors.textMuted;
     }
   }
 
@@ -1204,21 +1863,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     final actionItems = meeting.actionItems.toList();
 
     // Sort active first, then sort active by priority (High -> Medium -> Low), completed at bottom.
-    final sortedActionItems = List<ActionItemModel>.from(actionItems)..sort((a, b) {
-      if (a.isCompleted != b.isCompleted) {
-        return a.isCompleted ? 1 : -1;
-      }
-      final pA = (a.priority ?? 'Low').toLowerCase();
-      final pB = (b.priority ?? 'Low').toLowerCase();
-      final score = {
-        'high': 3,
-        'medium': 2,
-        'low': 1,
-      };
-      final valA = score[pA] ?? 1;
-      final valB = score[pB] ?? 1;
-      return valB.compareTo(valA);
-    });
+    final sortedActionItems = List<ActionItemModel>.from(actionItems)
+      ..sort((a, b) {
+        if (a.isCompleted != b.isCompleted) {
+          return a.isCompleted ? 1 : -1;
+        }
+        final pA = (a.priority ?? 'Low').toLowerCase();
+        final pB = (b.priority ?? 'Low').toLowerCase();
+        final score = {'high': 3, 'medium': 2, 'low': 1};
+        final valA = score[pA] ?? 1;
+        final valB = score[pB] ?? 1;
+        return valB.compareTo(valA);
+      });
 
     if (actionItems.isEmpty) {
       return Center(
@@ -1232,7 +1888,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.15), width: 1),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.15),
+                    width: 1,
+                  ),
                 ),
                 child: const Icon(
                   Icons.playlist_add_check_rounded,
@@ -1244,15 +1903,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               Text(
                 'No Action Items Found',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
                 'AI has not generated or identified any action items from this meeting transcript.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
             ],
           ),
@@ -1263,13 +1926,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     final totalTasks = actionItems.length;
     final completedTasks = actionItems.where((item) => item.isCompleted).length;
     final pendingTasks = totalTasks - completedTasks;
-    final highPriorityTasks = actionItems.where((item) => (item.priority ?? '').toLowerCase() == 'high').length;
+    final highPriorityTasks = actionItems
+        .where((item) => (item.priority ?? '').toLowerCase() == 'high')
+        .length;
     final completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0.0;
 
     final filteredActionItems = sortedActionItems.where((item) {
       if (_statusFilter == 'Pending' && item.isCompleted) return false;
       if (_statusFilter == 'Completed' && !item.isCompleted) return false;
-      if (_priorityFilter != 'All' && (item.priority ?? 'Low').toLowerCase() != _priorityFilter.toLowerCase()) return false;
+      if (_priorityFilter != 'All' &&
+          (item.priority ?? 'Low').toLowerCase() !=
+              _priorityFilter.toLowerCase())
+        return false;
       return true;
     }).toList();
 
@@ -1289,11 +1957,16 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.assignment_turned_in_rounded, color: AppColors.secondary, size: 20),
+                        const Icon(
+                          Icons.assignment_turned_in_rounded,
+                          color: AppColors.secondary,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'Action Items Progress',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.textPrimary,
                               ),
@@ -1302,7 +1975,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     ),
                     Text(
                       '$completedTasks of $totalTasks Completed',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.secondary),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: AppColors.secondary,
+                      ),
                     ),
                   ],
                 ),
@@ -1332,7 +2009,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               const SizedBox(width: 6),
               _buildStatCard('Completed', completedTasks, AppColors.success),
               const SizedBox(width: 6),
-              _buildStatCard('High Priority', highPriorityTasks, AppColors.error),
+              _buildStatCard(
+                'High Priority',
+                highPriorityTasks,
+                AppColors.error,
+              ),
             ],
           ),
         ),
@@ -1346,11 +2027,20 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 child: DropdownButtonFormField<String>(
                   value: _statusFilter,
                   dropdownColor: AppColors.surfaceLight,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Filter Status',
-                    labelStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    labelStyle: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     enabledBorder: OutlineInputBorder(
                       borderSide: const BorderSide(color: Colors.white10),
                       borderRadius: BorderRadius.circular(8),
@@ -1373,11 +2063,20 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 child: DropdownButtonFormField<String>(
                   value: _priorityFilter,
                   dropdownColor: AppColors.surfaceLight,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Filter Priority',
-                    labelStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    labelStyle: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     enabledBorder: OutlineInputBorder(
                       borderSide: const BorderSide(color: Colors.white10),
                       borderRadius: BorderRadius.circular(8),
@@ -1406,11 +2105,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.filter_list_off_rounded, color: AppColors.textMuted, size: 36),
+                      const Icon(
+                        Icons.filter_list_off_rounded,
+                        color: AppColors.textMuted,
+                        size: 36,
+                      ),
                       const SizedBox(height: 12),
                       const Text(
                         'No tasks match the selected filters.',
-                        style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextButton(
@@ -1441,7 +2147,8 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                         : 'No Deadline';
 
                     // Priority mapping
-                    final String priorityStr = (item.priority ?? 'Low').toUpperCase();
+                    final String priorityStr = (item.priority ?? 'Low')
+                        .toUpperCase();
                     Color priorityColor = AppColors.textMuted;
                     if (priorityStr == 'HIGH') {
                       priorityColor = AppColors.error;
@@ -1450,9 +2157,12 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     }
 
                     return GlassCard(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      borderColor: item.isCompleted 
-                          ? AppColors.success.withValues(alpha: 0.25) 
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      borderColor: item.isCompleted
+                          ? AppColors.success.withValues(alpha: 0.25)
                           : priorityColor.withValues(alpha: 0.25),
                       borderWidth: item.isCompleted ? 1.0 : 1.5,
                       child: Row(
@@ -1471,9 +2181,15 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                 ),
                                 onChanged: (bool? checked) async {
                                   if (checked != null) {
-                                    await ref.read(taskRepositoryProvider).updateTaskStatus(item.id, checked);
+                                    await ref
+                                        .read(taskRepositoryProvider)
+                                        .updateTaskStatus(item.id, checked);
                                     // Refresh parent meeting details
-                                    ref.invalidate(meetingDetailsStreamProvider(widget.meetingId));
+                                    ref.invalidate(
+                                      meetingDetailsStreamProvider(
+                                        widget.meetingId,
+                                      ),
+                                    );
                                     ref.invalidate(meetingsListStreamProvider);
                                   }
                                 },
@@ -1495,19 +2211,35 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                           fontSize: 14,
                                           fontWeight: FontWeight.bold,
                                           height: 1.4,
-                                          decoration: item.isCompleted ? TextDecoration.lineThrough : null,
-                                          color: item.isCompleted ? AppColors.textMuted : AppColors.textPrimary,
+                                          decoration: item.isCompleted
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                          color: item.isCompleted
+                                              ? AppColors.textMuted
+                                              : AppColors.textPrimary,
                                         ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
                                     if (!item.isCompleted)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: priorityColor.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: priorityColor.withValues(alpha: 0.3), width: 1),
+                                          color: priorityColor.withValues(
+                                            alpha: 0.15,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          border: Border.all(
+                                            color: priorityColor.withValues(
+                                              alpha: 0.3,
+                                            ),
+                                            width: 1,
+                                          ),
                                         ),
                                         child: Text(
                                           priorityStr,
@@ -1519,9 +2251,15 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                         ),
                                       ),
                                     PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_vert, size: 20, color: AppColors.textSecondary),
+                                      icon: const Icon(
+                                        Icons.more_vert,
+                                        size: 20,
+                                        color: AppColors.textSecondary,
+                                      ),
                                       padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 100),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 100,
+                                      ),
                                       color: AppColors.surfaceLight,
                                       onSelected: (val) {
                                         if (val == 'edit') {
@@ -1533,11 +2271,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                       itemBuilder: (context) => [
                                         const PopupMenuItem(
                                           value: 'edit',
-                                          child: Text('Edit', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+                                          child: Text(
+                                            'Edit',
+                                            style: TextStyle(
+                                              color: AppColors.textPrimary,
+                                              fontSize: 13,
+                                            ),
+                                          ),
                                         ),
                                         const PopupMenuItem(
                                           value: 'delete',
-                                          child: Text('Delete', style: TextStyle(color: AppColors.error, fontSize: 13)),
+                                          child: Text(
+                                            'Delete',
+                                            style: TextStyle(
+                                              color: AppColors.error,
+                                              fontSize: 13,
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -1546,20 +2296,37 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    if (item.assignedTo != null && item.assignedTo!.isNotEmpty) ...[
-                                      const Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                                    if (item.assignedTo != null &&
+                                        item.assignedTo!.isNotEmpty) ...[
+                                      const Icon(
+                                        Icons.person_outline_rounded,
+                                        size: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
                                       const SizedBox(width: 4),
                                       Text(
                                         item.assignedTo!,
-                                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                       const SizedBox(width: 16),
                                     ],
-                                    const Icon(Icons.calendar_today_rounded, size: 12, color: AppColors.textSecondary),
+                                    const Icon(
+                                      Icons.calendar_today_rounded,
+                                      size: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       deadlineStr,
-                                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1624,8 +2391,16 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: AppColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('Edit Task', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Edit Task',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1657,7 +2432,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                         labelStyle: TextStyle(color: AppColors.textMuted),
                       ),
                       items: ['High', 'Medium', 'Low']
-                          .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                          .map(
+                            (p) => DropdownMenuItem(value: p, child: Text(p)),
+                          )
                           .toList(),
                       onChanged: (val) {
                         if (val != null) {
@@ -1668,13 +2445,20 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.textSecondary),
+                        const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           selectedDate != null
                               ? DateFormat('yyyy-MM-dd').format(selectedDate!)
                               : 'No Deadline Set',
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                          ),
                         ),
                         const Spacer(),
                         TextButton(
@@ -1682,8 +2466,12 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                             final date = await showDatePicker(
                               context: context,
                               initialDate: selectedDate ?? DateTime.now(),
-                              firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                              lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+                              firstDate: DateTime.now().subtract(
+                                const Duration(days: 365),
+                              ),
+                              lastDate: DateTime.now().add(
+                                const Duration(days: 365 * 5),
+                              ),
                               builder: (context, child) {
                                 return Theme(
                                   data: Theme.of(context).copyWith(
@@ -1703,7 +2491,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                               setDialogState(() => selectedDate = date);
                             }
                           },
-                          child: const Text('Pick Date', style: TextStyle(color: AppColors.secondary)),
+                          child: const Text(
+                            'Pick Date',
+                            style: TextStyle(color: AppColors.secondary),
+                          ),
                         ),
                       ],
                     ),
@@ -1713,7 +2504,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: () async {
@@ -1725,7 +2519,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     await ref.read(taskRepositoryProvider).updateTask(item);
                     if (context.mounted) {
                       Navigator.pop(context);
-                      ref.invalidate(meetingDetailsStreamProvider(widget.meetingId));
+                      ref.invalidate(
+                        meetingDetailsStreamProvider(widget.meetingId),
+                      );
                     }
                   },
                   child: const Text('Save'),
@@ -1744,13 +2540,27 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       builder: (context) {
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Delete Task', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-          content: const Text('Are you sure you want to delete this task?', style: TextStyle(color: AppColors.textSecondary)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Delete Task',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: const Text(
+            'Are you sure you want to delete this task?',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
@@ -1758,10 +2568,15 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                 await ref.read(taskRepositoryProvider).deleteTask(item.id);
                 if (context.mounted) {
                   Navigator.pop(context);
-                  ref.invalidate(meetingDetailsStreamProvider(widget.meetingId));
+                  ref.invalidate(
+                    meetingDetailsStreamProvider(widget.meetingId),
+                  );
                 }
               },
-              child: const Text('Delete', style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -1777,7 +2592,7 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       children: [
         // Meeting Context Card at the top
         _buildContextCard(meeting),
-        
+
         Expanded(
           child: chatAsync.when(
             data: (messages) {
@@ -1812,13 +2627,21 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   }
 
                   // 2. Error message bubble
-                  final bool isConnectionError = msg.message?.startsWith('⚠️ Connection Error') ?? false;
-                  final bool isAiUnavailable = msg.message?.startsWith('⚠️ AI Unavailable') ?? false;
+                  final bool isConnectionError =
+                      msg.message?.startsWith('⚠️ Connection Error') ?? false;
+                  final bool isAiUnavailable =
+                      msg.message?.startsWith('⚠️ AI Unavailable') ?? false;
 
                   if (!msg.isUser && (isConnectionError || isAiUnavailable)) {
-                    final originalText = idx > 0 ? (messages[idx - 1].message ?? '') : '';
+                    final originalText = idx > 0
+                        ? (messages[idx - 1].message ?? '')
+                        : '';
                     final parts = (msg.message ?? '').split('\nDetails:');
-                    final title = parts.isNotEmpty ? parts[0] : (isConnectionError ? '⚠️ Connection Error' : '⚠️ AI Unavailable');
+                    final title = parts.isNotEmpty
+                        ? parts[0]
+                        : (isConnectionError
+                              ? '⚠️ Connection Error'
+                              : '⚠️ AI Unavailable');
                     final details = parts.length > 1 ? parts[1].trim() : '';
 
                     return Padding(
@@ -1829,7 +2652,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                           errorMessage: title,
                           details: details,
                           onRetry: () {
-                            ref.read(meetingChatProvider(meeting.id).notifier).retryLastMessage(originalText);
+                            ref
+                                .read(meetingChatProvider(meeting.id).notifier)
+                                .retryLastMessage(originalText);
                           },
                         ),
                       ),
@@ -1837,29 +2662,43 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   }
 
                   // 3. Normal Message
-                  final isLastAiMessage = !msg.isUser && (idx == messages.length - 1);
-                  
+                  final isLastAiMessage =
+                      !msg.isUser && (idx == messages.length - 1);
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12.0),
                     child: Column(
-                      crossAxisAlignment: msg.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                      crossAxisAlignment: msg.isUser
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
                       children: [
                         Align(
-                          alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+                          alignment: msg.isUser
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
                           child: GlassCard(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
                             margin: EdgeInsets.only(
                               left: msg.isUser ? 40.0 : 0.0,
                               right: msg.isUser ? 0.0 : 40.0,
                             ),
-                            borderColor: msg.isUser ? AppColors.primary.withValues(alpha: 0.4) : Colors.white12,
+                            borderColor: msg.isUser
+                                ? AppColors.accent.withOpacity(0.35)
+                                : AppColors.border,
                             gradientColors: msg.isUser
-                                ? [AppColors.primary, AppColors.surfaceLight]
+                                ? [AppColors.primary, AppColors.secondary]
                                 : null,
                             child: msg.isUser
                                 ? Text(
                                     msg.message ?? '',
-                                    style: const TextStyle(fontSize: 14, height: 1.4, color: AppColors.textPrimary),
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      height: 1.4,
+                                      color: AppColors.textPrimary,
+                                    ),
                                   )
                                 : _buildParsedMessageContent(msg.message ?? ''),
                           ),
@@ -1876,48 +2715,101 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, _) => Center(child: Text('Chat Error: $err', style: const TextStyle(color: AppColors.error))),
+            error: (err, _) => Center(
+              child: Text(
+                'Chat Error: $err',
+                style: const TextStyle(color: AppColors.error),
+              ),
+            ),
           ),
         ),
 
-        // Bottom Input box
+        // Bottom Floating Input box (Modern AI Interface)
         Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border(top: BorderSide(color: AppColors.surfaceLight)),
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: AppTheme.glassBoxDecoration(
+            opacity: 0.08,
+            borderColor: AppColors.border,
           ),
           child: Row(
             children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.add_circle_outline_rounded,
+                  color: AppColors.textSecondary,
+                  size: 22,
+                ),
+                onPressed: () {
+                  // Attachment action placeholder
+                },
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.mic_none_rounded,
+                  color: AppColors.textSecondary,
+                  size: 22,
+                ),
+                onPressed: () {
+                  // Voice search action placeholder
+                },
+              ),
               Expanded(
                 child: TextFormField(
                   controller: _chatController,
                   textInputAction: TextInputAction.send,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13.5,
+                  ),
                   onFieldSubmitted: (val) {
                     if (val.trim().isNotEmpty) {
-                      ref.read(meetingChatProvider(meeting.id).notifier).sendMessage(val.trim());
+                      ref
+                          .read(meetingChatProvider(meeting.id).notifier)
+                          .sendMessage(val.trim());
                       _chatController.clear();
                     }
                   },
                   decoration: const InputDecoration(
                     hintText: 'Ask about this meeting...',
-                    hintStyle: TextStyle(color: AppColors.textMuted),
+                    hintStyle: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                    ),
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                     filled: false,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8),
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.send_rounded, color: AppColors.secondary),
-                onPressed: () {
-                  final text = _chatController.text.trim();
-                  if (text.isNotEmpty) {
-                    ref.read(meetingChatProvider(meeting.id).notifier).sendMessage(text);
-                    _chatController.clear();
-                  }
-                },
+              const SizedBox(width: 4),
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AppColors.primaryGradient,
+                  boxShadow: AppTheme.neonGlow(
+                    color: AppColors.secondary,
+                    radius: 4,
+                  ),
+                ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.send_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    final text = _chatController.text.trim();
+                    if (text.isNotEmpty) {
+                      ref
+                          .read(meetingChatProvider(meeting.id).notifier)
+                          .sendMessage(text);
+                      _chatController.clear();
+                    }
+                  },
+                ),
               ),
             ],
           ),
@@ -1928,14 +2820,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
 
   Widget _buildContextCard(MeetingModel meeting) {
     final segments = meeting.transcript.value?.segments.toList() ?? [];
-    final speakersCount = segments.map((s) => s.speaker).toSet().where((s) => s != null).length;
+    final speakersCount = segments
+        .map((s) => s.speaker)
+        .toSet()
+        .where((s) => s != null)
+        .length;
     final hasTranscript = segments.isNotEmpty;
     final hasSummary = meeting.summary.value != null;
-    
+
     final dateStr = meeting.createdAt != null
         ? DateFormat('MMM dd, yyyy').format(meeting.createdAt!)
         : 'No Date';
-        
+
     final minVal = meeting.durationSeconds / 60.0;
     final durationStr = minVal >= 1.0
         ? '${minVal.toStringAsFixed(0)}m ${(meeting.durationSeconds % 60).toStringAsFixed(0)}s'
@@ -1951,7 +2847,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           children: [
             _buildContextItem(Icons.calendar_month_rounded, dateStr, 'Date'),
             _buildContextItem(Icons.timer_outlined, durationStr, 'Duration'),
-            _buildContextItem(Icons.people_outline_rounded, '$speakersCount', 'Speakers'),
+            _buildContextItem(
+              Icons.people_outline_rounded,
+              '$speakersCount',
+              'Speakers',
+            ),
             _buildContextItem(
               Icons.description_outlined,
               hasTranscript ? 'Available' : 'Empty',
@@ -1970,7 +2870,12 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     );
   }
 
-  Widget _buildContextItem(IconData icon, String value, String label, {Color? color}) {
+  Widget _buildContextItem(
+    IconData icon,
+    String value,
+    String label, {
+    Color? color,
+  }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2004,14 +2909,43 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     ];
 
     final quickActionChips = [
-      {'label': 'Summary', 'query': 'Summarize this meeting and provide the key highlights.'},
-      {'label': 'Action Items', 'query': 'What are the concrete action items and assignments from this meeting?'},
-      {'label': 'Decisions', 'query': 'List all key decisions made during this discussion.'},
-      {'label': 'Deadlines', 'query': 'What deadlines, dates, or due dates were mentioned?'},
-      {'label': 'Risks', 'query': 'Identify any risks, concerns, or unresolved issues mentioned in the meeting.'},
-      {'label': 'Next Steps', 'query': 'What are the logical next steps for the team following this discussion?'},
-      {'label': 'Key Topics', 'query': 'What were the main topics discussed and how much time was spent on each?'},
-      {'label': 'Speaker Insights', 'query': 'Provide insights on speaker participation and who drove the conversation.'},
+      {
+        'label': 'Summary',
+        'query': 'Summarize this meeting and provide the key highlights.',
+      },
+      {
+        'label': 'Action Items',
+        'query':
+            'What are the concrete action items and assignments from this meeting?',
+      },
+      {
+        'label': 'Decisions',
+        'query': 'List all key decisions made during this discussion.',
+      },
+      {
+        'label': 'Deadlines',
+        'query': 'What deadlines, dates, or due dates were mentioned?',
+      },
+      {
+        'label': 'Risks',
+        'query':
+            'Identify any risks, concerns, or unresolved issues mentioned in the meeting.',
+      },
+      {
+        'label': 'Next Steps',
+        'query':
+            'What are the logical next steps for the team following this discussion?',
+      },
+      {
+        'label': 'Key Topics',
+        'query':
+            'What were the main topics discussed and how much time was spent on each?',
+      },
+      {
+        'label': 'Speaker Insights',
+        'query':
+            'Provide insights on speaker participation and who drove the conversation.',
+      },
     ];
 
     return SingleChildScrollView(
@@ -2039,22 +2973,30 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             '🤖 Meeting Assistant',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
           ),
           const SizedBox(height: 8),
           const Text(
             'Ask questions about this meeting transcript and get instant AI-powered insights.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 24),
-          
+
           // Quick Action Chips Header
           const Text(
             'Quick Actions',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textMuted,
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -2063,11 +3005,16 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             children: quickActionChips.map((chip) {
               return InkWell(
                 onTap: () {
-                  ref.read(meetingChatProvider(meeting.id).notifier).sendMessage(chip['query']!);
+                  ref
+                      .read(meetingChatProvider(meeting.id).notifier)
+                      .sendMessage(chip['query']!);
                 },
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(20),
@@ -2076,11 +3023,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.flash_on_rounded, size: 12, color: AppColors.secondary),
+                      const Icon(
+                        Icons.flash_on_rounded,
+                        size: 12,
+                        color: AppColors.secondary,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         chip['label']!,
-                        style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
@@ -2088,13 +3043,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               );
             }).toList(),
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           // Suggested Questions List
           const Text(
             'Suggested Questions',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textMuted,
+            ),
           ),
           const SizedBox(height: 10),
           ...suggestedQuestions.map((question) {
@@ -2107,22 +3066,38 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               margin: const EdgeInsets.only(bottom: 8),
               child: InkWell(
                 onTap: () {
-                  ref.read(meetingChatProvider(meeting.id).notifier).sendMessage(question);
+                  ref
+                      .read(meetingChatProvider(meeting.id).notifier)
+                      .sendMessage(question);
                 },
                 borderRadius: BorderRadius.circular(10),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
-                      const Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textMuted),
+                      const Icon(
+                        Icons.help_outline_rounded,
+                        size: 14,
+                        color: AppColors.textMuted,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           question,
-                          style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
                       ),
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppColors.textMuted),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 12,
+                        color: AppColors.textMuted,
+                      ),
                     ],
                   ),
                 ),
@@ -2137,13 +3112,13 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
   Widget _buildParsedMessageContent(String text) {
     final List<Widget> children = [];
     final lines = text.split('\n');
-    
+
     String currentSection = '';
     List<String> sectionLines = [];
-    
+
     void flushSection() {
       if (sectionLines.isEmpty) return;
-      
+
       final content = sectionLines.join('\n').trim();
       if (currentSection == 'summary') {
         children.add(_buildSummaryCard(content));
@@ -2162,20 +3137,27 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     for (final line in lines) {
       final trimmed = line.trim();
       final lower = trimmed.toLowerCase();
-      
-      if (lower.startsWith('📋 meeting summary') || lower.startsWith('executive summary:') || lower.startsWith('summary:')) {
+
+      if (lower.startsWith('📋 meeting summary') ||
+          lower.startsWith('executive summary:') ||
+          lower.startsWith('summary:')) {
         flushSection();
         currentSection = 'summary';
         if (!lower.startsWith('📋 meeting summary')) {
           sectionLines.add(line);
         }
-      } else if (lower.startsWith('action items:') || lower.startsWith('tasks:') || lower.startsWith('action items') || lower.startsWith('action items detected:')) {
+      } else if (lower.startsWith('action items:') ||
+          lower.startsWith('tasks:') ||
+          lower.startsWith('action items') ||
+          lower.startsWith('action items detected:')) {
         flushSection();
         currentSection = 'tasks';
-      } else if (lower.startsWith('decisions:') || lower.startsWith('key decisions:')) {
+      } else if (lower.startsWith('decisions:') ||
+          lower.startsWith('key decisions:')) {
         flushSection();
         currentSection = 'decisions';
-      } else if (lower.startsWith('deadlines:') || lower.startsWith('key deadlines:')) {
+      } else if (lower.startsWith('deadlines:') ||
+          lower.startsWith('key deadlines:')) {
         flushSection();
         currentSection = 'deadlines';
       } else if (trimmed.isEmpty) {
@@ -2190,17 +3172,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       }
     }
     flushSection();
-    
+
     if (children.isEmpty) {
       return _buildFormattedText(text);
     }
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: children.map((w) => Padding(
-        padding: const EdgeInsets.only(bottom: 8.0),
-        child: w,
-      )).toList(),
+      children: children
+          .map(
+            (w) =>
+                Padding(padding: const EdgeInsets.only(bottom: 8.0), child: w),
+          )
+          .toList(),
     );
   }
 
@@ -2215,7 +3199,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         continue;
       }
 
-      final isBullet = trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*');
+      final isBullet =
+          trimmed.startsWith('•') ||
+          trimmed.startsWith('-') ||
+          trimmed.startsWith('*');
       var cleanText = trimmed;
       if (isBullet) {
         cleanText = trimmed.substring(1).trim();
@@ -2229,12 +3216,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
 
       for (final match in matches) {
         if (match.start > lastIndex) {
-          spans.add(TextSpan(text: cleanText.substring(lastIndex, match.start)));
+          spans.add(
+            TextSpan(text: cleanText.substring(lastIndex, match.start)),
+          );
         }
-        spans.add(TextSpan(
-          text: match.group(1),
-          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.secondary),
-        ));
+        spans.add(
+          TextSpan(
+            text: match.group(1),
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.secondary,
+            ),
+          ),
+        );
         lastIndex = match.end;
       }
       if (lastIndex < cleanText.length) {
@@ -2248,11 +3242,18 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(' •  ', style: TextStyle(color: AppColors.secondary, fontSize: 14)),
+                const Text(
+                  ' •  ',
+                  style: TextStyle(color: AppColors.secondary, fontSize: 14),
+                ),
                 Expanded(
                   child: RichText(
                     text: TextSpan(
-                      style: const TextStyle(fontSize: 14, height: 1.4, color: AppColors.textPrimary),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.4,
+                        color: AppColors.textPrimary,
+                      ),
                       children: spans,
                     ),
                   ),
@@ -2267,7 +3268,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             padding: const EdgeInsets.symmetric(vertical: 2.0),
             child: RichText(
               text: TextSpan(
-                style: const TextStyle(fontSize: 14, height: 1.4, color: AppColors.textPrimary),
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.textPrimary,
+                ),
                 children: spans,
               ),
             ),
@@ -2304,18 +3309,30 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         children: [
           Row(
             children: const [
-              Icon(Icons.summarize_outlined, color: AppColors.secondary, size: 18),
+              Icon(
+                Icons.summarize_outlined,
+                color: AppColors.secondary,
+                size: 18,
+              ),
               SizedBox(width: 8),
               Text(
                 'Executive Summary',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.secondary),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: AppColors.secondary,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             content,
-            style: const TextStyle(fontSize: 13, height: 1.4, color: AppColors.textPrimary),
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: AppColors.textPrimary,
+            ),
           ),
         ],
       ),
@@ -2327,28 +3344,37 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     for (final line in lines) {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
-      
+
       var cleanText = trimmed;
-      if (cleanText.startsWith('-') || cleanText.startsWith('•') || cleanText.startsWith('*')) {
+      if (cleanText.startsWith('-') ||
+          cleanText.startsWith('•') ||
+          cleanText.startsWith('*')) {
         cleanText = cleanText.substring(1).trim();
       }
       if (cleanText.startsWith('[ ]') || cleanText.startsWith('[x]')) {
         cleanText = cleanText.substring(3).trim();
       }
       if (cleanText.isEmpty) continue;
-      
+
       taskWidgets.add(
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.check_box_outline_blank_rounded, color: AppColors.primary, size: 16),
+              const Icon(
+                Icons.check_box_outline_blank_rounded,
+                color: AppColors.primary,
+                size: 16,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   cleanText,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -2356,9 +3382,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         ),
       );
     }
-    
+
     if (taskWidgets.isEmpty) return const SizedBox();
-    
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.primary.withValues(alpha: 0.05),
@@ -2371,11 +3397,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         children: [
           Row(
             children: const [
-              Icon(Icons.playlist_add_check_rounded, color: AppColors.primary, size: 18),
+              Icon(
+                Icons.playlist_add_check_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
               SizedBox(width: 8),
               Text(
                 'Extracted Action Items',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: AppColors.primary,
+                ),
               ),
             ],
           ),
@@ -2392,7 +3426,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       var cleanText = trimmed;
-      if (cleanText.startsWith('-') || cleanText.startsWith('•') || cleanText.startsWith('*')) {
+      if (cleanText.startsWith('-') ||
+          cleanText.startsWith('•') ||
+          cleanText.startsWith('*')) {
         cleanText = cleanText.substring(1).trim();
       }
       if (cleanText.isEmpty) continue;
@@ -2402,12 +3438,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.gavel_rounded, color: AppColors.success, size: 16),
+              const Icon(
+                Icons.gavel_rounded,
+                color: AppColors.success,
+                size: 16,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   cleanText,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -2428,11 +3471,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         children: [
           Row(
             children: const [
-              Icon(Icons.check_circle_outline_rounded, color: AppColors.success, size: 18),
+              Icon(
+                Icons.check_circle_outline_rounded,
+                color: AppColors.success,
+                size: 18,
+              ),
               SizedBox(width: 8),
               Text(
                 'Key Decisions',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.success),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: AppColors.success,
+                ),
               ),
             ],
           ),
@@ -2449,7 +3500,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       var cleanText = trimmed;
-      if (cleanText.startsWith('-') || cleanText.startsWith('•') || cleanText.startsWith('*')) {
+      if (cleanText.startsWith('-') ||
+          cleanText.startsWith('•') ||
+          cleanText.startsWith('*')) {
         cleanText = cleanText.substring(1).trim();
       }
       if (cleanText.isEmpty) continue;
@@ -2459,12 +3512,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.calendar_today_rounded, color: AppColors.warning, size: 14),
+              const Icon(
+                Icons.calendar_today_rounded,
+                color: AppColors.warning,
+                size: 14,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   cleanText,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -2485,11 +3545,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
         children: [
           Row(
             children: const [
-              Icon(Icons.notification_important_rounded, color: AppColors.warning, size: 18),
+              Icon(
+                Icons.notification_important_rounded,
+                color: AppColors.warning,
+                size: 18,
+              ),
               SizedBox(width: 8),
               Text(
                 'Deadlines & Milestones',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.warning),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: AppColors.warning,
+                ),
               ),
             ],
           ),
@@ -2518,7 +3586,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             padding: EdgeInsets.symmetric(horizontal: 8.0),
             child: Text(
               'Follow-up suggestions:',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 6),
@@ -2531,9 +3603,17 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   child: ActionChip(
                     backgroundColor: Colors.white.withValues(alpha: 0.02),
                     side: const BorderSide(color: Colors.white10),
-                    label: Text(s, style: const TextStyle(fontSize: 12, color: AppColors.secondary)),
+                    label: Text(
+                      s,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.secondary,
+                      ),
+                    ),
                     onPressed: () {
-                      ref.read(meetingChatProvider(meeting.id).notifier).sendMessage(s);
+                      ref
+                          .read(meetingChatProvider(meeting.id).notifier)
+                          .sendMessage(s);
                     },
                   ),
                 );
@@ -2561,52 +3641,77 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Meeting Audio Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          const Text(
+            'Meeting Audio Details',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
           const SizedBox(height: 16),
-          
+
           GlassCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildInfoRow('Audio Path', meeting.audioFilePath ?? 'No file saved'),
+                _buildInfoRow(
+                  'Audio Path',
+                  meeting.audioFilePath ?? 'No file saved',
+                ),
                 const Divider(color: Colors.white10, height: 24),
                 _buildInfoRow('Created on', dateStr),
                 const Divider(color: Colors.white10, height: 24),
-                _buildInfoRow('Raw File Size', _audioAvailable ? 'Valid WAV File' : 'Unavailable'),
+                _buildInfoRow(
+                  'Raw File Size',
+                  _audioAvailable ? 'Valid WAV File' : 'Unavailable',
+                ),
               ],
             ),
           ),
-          
+
           const SizedBox(height: 24),
-          const Text('Playback Speed Control', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            'Playback Speed Control',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 12),
-          
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [0.5, 1.0, 1.5, 2.0].map((speed) {
               final isSelected = _playbackSpeed == speed;
               return ChoiceChip(
-                label: Text('${speed}x', style: const TextStyle(fontWeight: FontWeight.bold)),
+                label: Text(
+                  '${speed}x',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
                 selected: isSelected,
                 selectedColor: AppColors.secondary,
-                labelStyle: TextStyle(color: isSelected ? Colors.black : Colors.white),
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                ),
                 onSelected: _audioAvailable ? (_) => _changeSpeed(speed) : null,
               );
             }).toList(),
           ),
-          
+
           const SizedBox(height: 40),
-          
+
           // Regenerate summaries button
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               side: const BorderSide(color: AppColors.primary),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => _runSummaryGeneration(meeting),
             icon: const Icon(Icons.refresh, color: AppColors.primary),
-            label: const Text('Regenerate AI Analysis', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+            label: const Text(
+              'Regenerate AI Analysis',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -2617,9 +3722,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ],
     );
   }
@@ -2629,10 +3748,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     final totalSecs = _audioDuration.inSeconds.toDouble();
     final currentSecs = _audioPosition.inSeconds.toDouble();
 
-    final currentMin = (_audioPosition.inSeconds ~/ 60).toString().padLeft(2, '0');
-    final currentSec = (_audioPosition.inSeconds % 60).toString().padLeft(2, '0');
+    final currentMin = (_audioPosition.inSeconds ~/ 60).toString().padLeft(
+      2,
+      '0',
+    );
+    final currentSec = (_audioPosition.inSeconds % 60).toString().padLeft(
+      2,
+      '0',
+    );
 
-    final totalMin = (_audioDuration.inSeconds ~/ 60).toString().padLeft(2, '0');
+    final totalMin = (_audioDuration.inSeconds ~/ 60).toString().padLeft(
+      2,
+      '0',
+    );
     final totalSec = (_audioDuration.inSeconds % 60).toString().padLeft(2, '0');
 
     final double screenWidth = MediaQuery.of(context).size.width;
@@ -2640,7 +3768,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
 
     return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(20),
+        topRight: Radius.circular(20),
+      ),
       borderColor: AppColors.primary.withValues(alpha: 0.3),
       borderWidth: 1.0,
       opacity: 0.12,
@@ -2653,7 +3784,13 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               // Row 1: Slider and durations
               Row(
                 children: [
-                  Text('$currentMin:$currentSec', style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                  Text(
+                    '$currentMin:$currentSec',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                   Expanded(
                     child: Slider(
                       value: currentSecs.clamp(0.0, totalSecs),
@@ -2665,13 +3802,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       },
                     ),
                   ),
-                  Text('$totalMin:$totalSec', style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                  Text(
+                    '$totalMin:$totalSec',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ],
               ),
               // Row 2: Control Button centered
               Center(
                 child: IconButton(
-                  icon: Icon(_isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+                  icon: Icon(
+                    _isPlaying
+                        ? Icons.pause_circle_filled_rounded
+                        : Icons.play_circle_fill_rounded,
+                  ),
                   iconSize: 40,
                   color: AppColors.secondary,
                   onPressed: _togglePlayback,
@@ -2682,13 +3829,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               Row(
                 children: [
                   IconButton(
-                    icon: Icon(_isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+                    icon: Icon(
+                      _isPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
+                    ),
                     iconSize: 44,
                     color: AppColors.secondary,
                     onPressed: _togglePlayback,
                   ),
                   const SizedBox(width: 8),
-                  Text('$currentMin:$currentSec', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                  Text(
+                    '$currentMin:$currentSec',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                   Expanded(
                     child: Slider(
                       value: currentSecs.clamp(0.0, totalSecs),
@@ -2700,7 +3857,13 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       },
                     ),
                   ),
-                  Text('$totalMin:$totalSec', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                  Text(
+                    '$totalMin:$totalSec',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -2722,7 +3885,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(20),
-        border: borderColor != null ? Border.all(color: borderColor, width: 1) : null,
+        border: borderColor != null
+            ? Border.all(color: borderColor, width: 1)
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2744,43 +3909,68 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
 
   Widget _buildVoiceEmotionCard(MeetingModel meeting) {
     final healthState = ref.watch(emotionHealthServiceProvider);
-    
+
     final emotion = meeting.detectedEmotion;
     final confidence = meeting.emotionConfidence ?? 0.0;
     final isLocal = meeting.isLocalEstimation ?? false;
-    final hasEmotion = emotion != null && emotion.isNotEmpty && emotion.toLowerCase() != 'feature unavailable';
+    final hasEmotion =
+        emotion != null &&
+        emotion.isNotEmpty &&
+        emotion.toLowerCase() != 'feature unavailable';
 
     String getEmoji(String emo) {
       switch (emo.toLowerCase()) {
-        case 'happy': return '😀';
-        case 'excited': return '🤩';
-        case 'confident': return '😎';
-        case 'calm': return '😌';
-        case 'concerned': return '😟';
-        case 'frustrated': return '😡';
-        case 'angry': return '😡';
-        case 'sad': return '😔';
-        case 'bored': return '😴';
-        case 'nervous': return '😨';
-        case 'thinking': return '🤔';
-        default: return '😐';
+        case 'happy':
+          return '😀';
+        case 'excited':
+          return '🤩';
+        case 'confident':
+          return '😎';
+        case 'calm':
+          return '😌';
+        case 'concerned':
+          return '😟';
+        case 'frustrated':
+          return '😡';
+        case 'angry':
+          return '😡';
+        case 'sad':
+          return '😔';
+        case 'bored':
+          return '😴';
+        case 'nervous':
+          return '😨';
+        case 'thinking':
+          return '🤔';
+        default:
+          return '😐';
       }
     }
 
     Color getColor(String emo) {
       switch (emo.toLowerCase()) {
-        case 'happy': case 'excited': return AppColors.secondary;
-        case 'confident': return AppColors.primary;
-        case 'calm': return AppColors.success;
-        case 'concerned': case 'nervous': return AppColors.warning;
-        case 'frustrated': case 'angry': return AppColors.error;
-        case 'thinking': return AppColors.accent;
-        default: return AppColors.textMuted;
+        case 'happy':
+        case 'excited':
+          return AppColors.secondary;
+        case 'confident':
+          return AppColors.primary;
+        case 'calm':
+          return AppColors.success;
+        case 'concerned':
+        case 'nervous':
+          return AppColors.warning;
+        case 'frustrated':
+        case 'angry':
+          return AppColors.error;
+        case 'thinking':
+          return AppColors.accent;
+        default:
+          return AppColors.textMuted;
       }
     }
 
     // STATE 1: ANALYZING / PROCESSING
-    if (healthState.status == EmotionBackendStatus.processing || 
+    if (healthState.status == EmotionBackendStatus.processing ||
         healthState.status == EmotionBackendStatus.analyzing) {
       return GlassCard(
         borderColor: AppColors.secondary.withValues(alpha: 0.3),
@@ -2848,7 +4038,10 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               Text(
                 healthState.errorMessage ?? 'Reconnecting to Flask backend...',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -2888,7 +4081,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               const SizedBox(height: 12),
               const Text(
                 'Voice tone emotion analysis backend is online on port 5000. Ready to analyze speech patterns.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -2901,7 +4098,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ],
@@ -2911,7 +4110,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
     }
 
     // STATE 5: FAILED (No emotion, offline/fallback active)
-    if (!hasEmotion && (healthState.status == EmotionBackendStatus.offline || healthState.status == EmotionBackendStatus.fallbackActive)) {
+    if (!hasEmotion &&
+        (healthState.status == EmotionBackendStatus.offline ||
+            healthState.status == EmotionBackendStatus.fallbackActive)) {
       return GlassCard(
         borderColor: AppColors.error.withValues(alpha: 0.3),
         child: Padding(
@@ -2942,16 +4143,23 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
               const SizedBox(height: 12),
               Text(
                 'Could not connect to the Flask emotion analysis server on port 5000.',
-                style: TextStyle(color: AppColors.textPrimary.withValues(alpha: 0.9), fontSize: 13, height: 1.4),
+                style: TextStyle(
+                  color: AppColors.textPrimary.withValues(alpha: 0.9),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
-              if (healthState.errorMessage != null && healthState.errorMessage!.isNotEmpty) ...[
+              if (healthState.errorMessage != null &&
+                  healthState.errorMessage!.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Text(
                     'Root Cause Details:\n${healthState.errorMessage}',
@@ -2974,21 +4182,29 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                   backgroundColor: AppColors.secondary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _isGeneratingSummary
                     ? null
-                    : () => ref.read(emotionHealthServiceProvider.notifier).checkConnection(isPassive: false),
+                    : () => ref
+                          .read(emotionHealthServiceProvider.notifier)
+                          .checkConnection(isPassive: false),
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text('Retry Connection to Backend'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.textPrimary,
-                  side: BorderSide(color: AppColors.textSecondary.withValues(alpha: 0.3)),
+                  side: BorderSide(
+                    color: AppColors.textSecondary.withValues(alpha: 0.3),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ],
@@ -2997,8 +4213,7 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
       );
     }
 
-
-        final cardColor = getColor(emotion ?? '');
+    final cardColor = getColor(emotion ?? '');
     final emoji = getEmoji(emotion ?? '');
     final isOnline = healthState.status == EmotionBackendStatus.connected;
 
@@ -3012,10 +4227,7 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
           children: [
             Row(
               children: [
-                Text(
-                  emoji,
-                  style: const TextStyle(fontSize: 38),
-                ),
+                Text(emoji, style: const TextStyle(fontSize: 38)),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -3032,13 +4244,19 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                       const SizedBox(height: 4),
                       Text(
                         'Confidence: ${(confidence * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.refresh_rounded, color: AppColors.textMuted),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    color: AppColors.textMuted,
+                  ),
                   tooltip: 'Re-analyze',
                   onPressed: _isGeneratingSummary
                       ? null
@@ -3049,14 +4267,16 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
             const SizedBox(height: 12),
             const Divider(color: AppColors.surfaceLight),
             const SizedBox(height: 8),
-            
+
             Row(
               children: [
                 Container(
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: (isLocal || !isOnline) ? AppColors.warning : AppColors.success,
+                    color: (isLocal || !isOnline)
+                        ? AppColors.warning
+                        : AppColors.success,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -3069,7 +4289,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen> wit
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: (isLocal || !isOnline) ? AppColors.warning : AppColors.secondary,
+                      color: (isLocal || !isOnline)
+                          ? AppColors.warning
+                          : AppColors.secondary,
                     ),
                   ),
                 ),
@@ -3089,12 +4311,13 @@ class PulsingThinkingBubble extends StatefulWidget {
   State<PulsingThinkingBubble> createState() => _PulsingThinkingBubbleState();
 }
 
-class _PulsingThinkingBubbleState extends State<PulsingThinkingBubble> with SingleTickerProviderStateMixin {
+class _PulsingThinkingBubbleState extends State<PulsingThinkingBubble>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   Timer? _messageTimer;
 
   int _messageIndex = 0;
-  
+
   final List<Map<String, dynamic>> _messages = [
     {'text': 'Analyzing Meeting Context...', 'icon': Icons.psychology_outlined},
     {'text': 'Reviewing Transcript...', 'icon': Icons.search_rounded},
@@ -3139,7 +4362,11 @@ class _PulsingThinkingBubbleState extends State<PulsingThinkingBubble> with Sing
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(current['icon'] as IconData, color: AppColors.secondary, size: 20),
+                Icon(
+                  current['icon'] as IconData,
+                  color: AppColors.secondary,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
                 Text(
                   current['text'] as String,
@@ -3186,7 +4413,10 @@ class ChatErrorBubble extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.error.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.error.withValues(alpha: 0.4), width: 1.5),
+        border: Border.all(
+          color: AppColors.error.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -3194,7 +4424,11 @@ class ChatErrorBubble extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+              const Icon(
+                Icons.error_outline_rounded,
+                color: AppColors.error,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 errorMessage,
@@ -3223,8 +4457,14 @@ class ChatErrorBubble extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.error,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               onPressed: onRetry,
               icon: const Icon(Icons.replay_rounded, size: 16),
@@ -3268,7 +4508,11 @@ class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
               padding: const EdgeInsets.all(16.0),
               child: Row(
                 children: [
-                  const Icon(Icons.favorite_rounded, color: AppColors.error, size: 22),
+                  const Icon(
+                    Icons.favorite_rounded,
+                    color: AppColors.error,
+                    size: 22,
+                  ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Column(
@@ -3294,14 +4538,16 @@ class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
                     ),
                   ),
                   Icon(
-                    _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    _isExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
                     color: AppColors.textMuted,
                   ),
                 ],
               ),
             ),
           ),
-          
+
           if (_isExpanded) ...[
             const Divider(color: Colors.white10, height: 1, thickness: 1),
             Padding(
@@ -3313,19 +4559,37 @@ class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildMiniMetric('Avg HR', '${m.heartRateAverage!.toStringAsFixed(0)} bpm', AppColors.error),
-                      _buildMiniMetric('Peak HR', '${m.heartRatePeak!.toStringAsFixed(0)} bpm', AppColors.warning),
-                      _buildMiniMetric('Avg Stress', '${m.stressAverage!.toStringAsFixed(0)}%', AppColors.primary),
-                      _buildMiniMetric('Engagement', '${m.engagementScore!.toStringAsFixed(0)}%', AppColors.secondary),
+                      _buildMiniMetric(
+                        'Avg HR',
+                        '${m.heartRateAverage!.toStringAsFixed(0)} bpm',
+                        AppColors.error,
+                      ),
+                      _buildMiniMetric(
+                        'Peak HR',
+                        '${m.heartRatePeak!.toStringAsFixed(0)} bpm',
+                        AppColors.warning,
+                      ),
+                      _buildMiniMetric(
+                        'Avg Stress',
+                        '${m.stressAverage!.toStringAsFixed(0)}%',
+                        AppColors.primary,
+                      ),
+                      _buildMiniMetric(
+                        'Engagement',
+                        '${m.engagementScore!.toStringAsFixed(0)}%',
+                        AppColors.secondary,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Expandable insights list
                   _buildInsightItem(
                     title: 'Mental Strain & Stress',
                     value: '${m.stressAverage!.toStringAsFixed(0)}%',
-                    insight: m.stressAnalysis ?? 'Telemetry indicates stable heart rate variability and moderate cognitive load.',
+                    insight:
+                        m.stressAnalysis ??
+                        'Telemetry indicates stable heart rate variability and moderate cognitive load.',
                     color: AppColors.primary,
                     icon: Icons.speed_rounded,
                   ),
@@ -3333,15 +4597,21 @@ class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
                   _buildInsightItem(
                     title: 'Engagement & Focus',
                     value: '${m.engagementScore!.toStringAsFixed(0)}%',
-                    insight: m.engagementAnalysis ?? 'High engagement detected, correlating speaking segments with steady cardiovascular load.',
+                    insight:
+                        m.engagementAnalysis ??
+                        'High engagement detected, correlating speaking segments with steady cardiovascular load.',
                     color: AppColors.secondary,
                     icon: Icons.bolt_rounded,
                   ),
                   const SizedBox(height: 14),
                   _buildInsightItem(
                     title: 'Meeting Energy Drain',
-                    value: m.energyDrain != null ? '${m.energyDrain!.toStringAsFixed(0)} kcal' : 'N/A',
-                    insight: m.energyAnalysis ?? 'Caloric drain and physical exhaustion calculated based on meeting duration and average heart rate elevation.',
+                    value: m.energyDrain != null
+                        ? '${m.energyDrain!.toStringAsFixed(0)} kcal'
+                        : 'N/A',
+                    insight:
+                        m.energyAnalysis ??
+                        'Caloric drain and physical exhaustion calculated based on meeting duration and average heart rate elevation.',
                     color: AppColors.accent,
                     icon: Icons.battery_charging_full_rounded,
                   ),
@@ -3369,7 +4639,11 @@ class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
       children: [
         Text(
           value,
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: color),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: color,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -3408,23 +4682,95 @@ class _BiometricInsightsCardState extends State<BiometricInsightsCard> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   Text(
                     value,
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: color,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
               Text(
                 insight,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Data model for a speaker block in the transcript view
+// ─────────────────────────────────────────────────────────────────────────────
+class _SpeakerBlock {
+  final int speaker;
+  final SpeakerProfileModel? profile;
+  final List<TranscriptSegmentModel> sentences;
+
+  _SpeakerBlock({
+    required this.speaker,
+    required this.profile,
+    required this.sentences,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small pill-shaped action button for the transcript toolbar
+// ─────────────────────────────────────────────────────────────────────────────
+class _TranscriptActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _TranscriptActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: AppColors.accent),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

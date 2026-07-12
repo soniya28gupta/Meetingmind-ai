@@ -11,11 +11,7 @@ class AuthState {
   final UserModel? user;
   final String? errorMessage;
 
-  AuthState({
-    required this.status,
-    this.user,
-    this.errorMessage,
-  });
+  AuthState({required this.status, this.user, this.errorMessage});
 
   AuthState copyWith({
     AuthStatus? status,
@@ -51,9 +47,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (e is PlatformException) {
       final code = e.code;
       final message = e.message ?? '';
-      
+
       if (code == 'sign_in_failed') {
-        if (message.contains('10') || e.toString().contains('ApiException: 10')) {
+        if (message.contains('10') ||
+            e.toString().contains('ApiException: 10')) {
           return 'Google Sign-In Developer Error (Status 10):\n'
               '1. Ensure GOOGLE_WEB_CLIENT_ID in your .env file matches the Firebase Web Client ID.\n'
               '2. Confirm your SHA-1 (0E:8D:FF:...) is added to the Firebase Console.';
@@ -67,11 +64,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         }
         return 'Google Sign-in configuration mismatch: $message ($code)';
       }
-      
+
       if (code == 'network-request-failed') {
         return 'Network Unavailable: Please check your internet connection.';
       }
-      
+
       return 'Platform Error ($code): $message';
     }
 
@@ -103,7 +100,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final errStr = e.toString();
     if (errStr.contains('user-not-found')) {
       return 'No account found with this email. Please check your spelling or sign up.';
-    } else if (errStr.contains('wrong-password') || errStr.contains('invalid-credential')) {
+    } else if (errStr.contains('wrong-password') ||
+        errStr.contains('invalid-credential')) {
       return 'Incorrect password or credentials. Please try again.';
     } else if (errStr.contains('invalid-email')) {
       return 'Please enter a valid email address.';
@@ -113,7 +111,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return 'Network error. Please check your internet connection.';
     } else if (errStr.contains('cancelled') || errStr.contains('Cancelled')) {
       return 'Google Sign-In was cancelled.';
-    } else if (errStr.contains('ApiException: 10') || errStr.contains('sign_in_failed')) {
+    } else if (errStr.contains('ApiException: 10') ||
+        errStr.contains('sign_in_failed')) {
       return 'Google Sign-In configuration error. Verify SHA-1 setup and client IDs.';
     } else if (errStr.contains('weak-password')) {
       return 'The password is too weak. Please use a stronger password.';
@@ -126,20 +125,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> loginWithEmail(String email, String password) async {
     state = AuthState(status: AuthStatus.loading);
     try {
-      final user = await _ref.read(authRepositoryProvider).signInWithEmailAndPassword(email, password);
+      final user = await _ref
+          .read(authRepositoryProvider)
+          .signInWithEmailAndPassword(email, password);
       state = AuthState(status: AuthStatus.authenticated, user: user);
     } catch (e) {
-      state = AuthState(status: AuthStatus.error, errorMessage: _mapExceptionToMessage(e));
+      state = AuthState(
+        status: AuthStatus.error,
+        errorMessage: _mapExceptionToMessage(e),
+      );
     }
   }
 
-  Future<void> signUpWithEmail(String email, String password, String displayName) async {
+  Future<void> signUpWithEmail(
+    String email,
+    String password,
+    String displayName,
+  ) async {
     state = AuthState(status: AuthStatus.loading);
     try {
-      final user = await _ref.read(authRepositoryProvider).signUpWithEmailAndPassword(email, password, displayName);
+      final user = await _ref
+          .read(authRepositoryProvider)
+          .signUpWithEmailAndPassword(email, password, displayName);
       state = AuthState(status: AuthStatus.authenticated, user: user);
     } catch (e) {
-      state = AuthState(status: AuthStatus.error, errorMessage: _mapExceptionToMessage(e));
+      state = AuthState(
+        status: AuthStatus.error,
+        errorMessage: _mapExceptionToMessage(e),
+      );
     }
   }
 
@@ -149,7 +162,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final user = await _ref.read(authRepositoryProvider).signInWithGoogle();
       state = AuthState(status: AuthStatus.authenticated, user: user);
     } catch (e) {
-      state = AuthState(status: AuthStatus.error, errorMessage: _mapExceptionToMessage(e));
+      state = AuthState(
+        status: AuthStatus.error,
+        errorMessage: _mapExceptionToMessage(e),
+      );
     }
   }
 
@@ -159,7 +175,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _ref.read(authRepositoryProvider).signOut();
       state = AuthState(status: AuthStatus.unauthenticated);
     } catch (e) {
-      state = AuthState(status: AuthStatus.error, errorMessage: _mapExceptionToMessage(e));
+      state = AuthState(
+        status: AuthStatus.error,
+        errorMessage: _mapExceptionToMessage(e),
+      );
     }
   }
 

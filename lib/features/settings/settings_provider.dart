@@ -2,11 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/config/env_config.dart';
 import '../../core/config/deepgram_debug.dart';
+import '../../services/backend_connection_manager.dart';
 
 class SettingsState {
   final String deepgramKey;
   final String ollamaUrl;
   final String ollamaModel;
+  final String customBackendUrl;
   final bool isBackgroundRecordingEnabled;
   final bool isLoading;
   final bool deepgramKeyFromEnv;
@@ -15,6 +17,7 @@ class SettingsState {
     required this.deepgramKey,
     required this.ollamaUrl,
     required this.ollamaModel,
+    this.customBackendUrl = '',
     this.isBackgroundRecordingEnabled = true,
     this.isLoading = false,
     this.deepgramKeyFromEnv = false,
@@ -24,6 +27,7 @@ class SettingsState {
     String? deepgramKey,
     String? ollamaUrl,
     String? ollamaModel,
+    String? customBackendUrl,
     bool? isBackgroundRecordingEnabled,
     bool? isLoading,
     bool? deepgramKeyFromEnv,
@@ -32,7 +36,9 @@ class SettingsState {
       deepgramKey: deepgramKey ?? this.deepgramKey,
       ollamaUrl: ollamaUrl ?? this.ollamaUrl,
       ollamaModel: ollamaModel ?? this.ollamaModel,
-      isBackgroundRecordingEnabled: isBackgroundRecordingEnabled ?? this.isBackgroundRecordingEnabled,
+      customBackendUrl: customBackendUrl ?? this.customBackendUrl,
+      isBackgroundRecordingEnabled:
+          isBackgroundRecordingEnabled ?? this.isBackgroundRecordingEnabled,
       isLoading: isLoading ?? this.isLoading,
       deepgramKeyFromEnv: deepgramKeyFromEnv ?? this.deepgramKeyFromEnv,
     );
@@ -44,12 +50,15 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   late final Future<void> _loadFuture;
 
   SettingsNotifier(Ref ref)
-      : super(SettingsState(
+    : super(
+        SettingsState(
           deepgramKey: '',
           ollamaUrl: '',
           ollamaModel: 'qwen2.5:7b',
+          customBackendUrl: '',
           isLoading: true,
-        )) {
+        ),
+      ) {
     _loadFuture = _loadSettings();
   }
 
@@ -73,11 +82,17 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final ollamaUrl = storedOllamaUrl;
 
     final storedOllamaModel = await _readSecureKey('ollama_model');
-    final ollamaModel = storedOllamaModel.isNotEmpty ? storedOllamaModel : 'qwen2.5:7b';
+    final ollamaModel = storedOllamaModel.isNotEmpty
+        ? storedOllamaModel
+        : 'qwen2.5:7b';
+
+    final storedBackendUrl = await _readSecureKey('custom_backend_url');
+    final customBackendUrl = storedBackendUrl;
 
     print("DEEPGRAM KEY LENGTH: ${dgKey.length}");
     print("OLLAMA URL: $ollamaUrl");
     print("OLLAMA MODEL: $ollamaModel");
+    print("CUSTOM BACKEND URL: $customBackendUrl");
 
     logDeepgramKeyDebug(dgKey, source: 'settings_provider._loadSettings');
 
@@ -85,6 +100,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       deepgramKey: dgKey,
       ollamaUrl: ollamaUrl,
       ollamaModel: ollamaModel,
+      customBackendUrl: customBackendUrl,
       isLoading: false,
       deepgramKeyFromEnv: envDeepgramKey.isNotEmpty,
     );
@@ -106,11 +122,19 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(ollamaModel: model);
   }
 
+  Future<void> saveCustomBackendUrl(String url) async {
+    await _secureStorage.write(key: 'custom_backend_url', value: url.trim());
+    state = state.copyWith(customBackendUrl: url.trim());
+    BackendConnectionManager.instance.checkConnection(isPassive: false);
+  }
+
   void toggleBackgroundRecording(bool enabled) {
     state = state.copyWith(isBackgroundRecordingEnabled: enabled);
   }
 }
 
-final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
-  return SettingsNotifier(ref);
-});
+final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
+  (ref) {
+    return SettingsNotifier(ref);
+  },
+);

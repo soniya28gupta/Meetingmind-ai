@@ -10,7 +10,9 @@ class IsarDatabase {
 
   static IsarDatabase get instance {
     if (_instance == null) {
-      throw StateError('IsarDatabase has not been initialized. Call initialize() first.');
+      throw StateError(
+        'IsarDatabase has not been initialized. Call initialize() first.',
+      );
     }
     return _instance!;
   }
