@@ -121,56 +121,86 @@ def classify_emotion(pitch_vals, rms_vals, zcr_vals, pauses_ratio):
         res = ("Neutral", 0.90)
         
     return res
-
 @app.route('/', methods=['GET'])
 def root():
     """Root endpoint returning service status."""
     return jsonify({
         "status": "online",
+        "online": True,
+        "ready": model_loaded,
         "service": "MeetingMind Emotion API",
-        "version": "1.0.0"
-    })
+        "version": "1.0.0",
+        "message": "MeetingMind Emotion API is running"
+    }), 200
+
 
 @app.route('/health', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
 def health():
-    """Health check endpoint returning detailed status."""
+    """Health-check endpoint used by Flutter and Render."""
+
     if not model_loaded:
         return jsonify({
             "status": "starting",
+            "online": True,
+            "ready": False,
             "service": "MeetingMind Emotion API",
             "version": "1.0.0",
             "model_loaded": False
         }), 503
+
     return jsonify({
         "status": "healthy",
+        "online": True,
+        "ready": True,
         "service": "MeetingMind Emotion API",
         "version": "1.0.0",
         "model_loaded": True
     }), 200
 
+
 @app.route('/ready', methods=['GET'])
+@app.route('/api/ready', methods=['GET'])
 def ready():
-    """Ready check endpoint."""
+    """Readiness-check endpoint used by Flutter and Render."""
+
     if not model_loaded:
         return jsonify({
             "status": "starting",
+            "online": True,
+            "ready": False,
+            "service": "MeetingMind Emotion API",
+            "version": "1.0.0",
             "model_loaded": False
         }), 503
+
     return jsonify({
         "status": "ready",
+        "online": True,
+        "ready": True,
+        "service": "MeetingMind Emotion API",
+        "version": "1.0.0",
         "model_loaded": True
     }), 200
 
+
 @app.route('/emotion', methods=['GET', 'POST'])
 def emotion():
-    """Fallback basic emotion analysis endpoint."""
+    """Fallback basic emotion-analysis endpoint."""
+
     print("Emotion request received")
-    resp = jsonify({
-        "emotion": "Neutral",
+
+    response = jsonify({
+        "success": True,
+        "status": "success",
+        "emotion": "neutral",
         "confidence": 0.92
     })
+
     print("Response sent")
-    return resp
+
+    return response, 200
+
 
 @app.route('/analyze-emotion', methods=['POST'])
 def analyze_emotion():
