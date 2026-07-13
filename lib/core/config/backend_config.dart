@@ -9,6 +9,9 @@ class ApiConfig {
     defaultValue: 'https://meetingmind-emotion-api.onrender.com',
   );
   static const String productionBaseUrl = emotionApiUrl;
+
+  static String get healthUrl =>
+      '${emotionApiUrl.replaceAll(RegExp(r"/+$"), "")}/health';
 }
 
 class BackendConfig {
