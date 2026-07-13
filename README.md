@@ -208,3 +208,111 @@ Emotion and Voice-Tone Analysis
       ↓
 Meeting Analytics and AI Insights
 
+## 🎯 Project Objective
+
+The primary objective of MeetingMind AI is to reduce the manual effort required to document, review, and manage meetings.
+
+Traditional meetings often create several challenges:
+
+- Important discussion points may be forgotten.
+- Manual note-taking can distract participants.
+- Action items may not be properly recorded.
+- Responsibilities and deadlines can become unclear.
+- Reviewing long recordings takes significant time.
+- Important decisions may become difficult to track.
+- Speaker engagement and emotional tone are usually not analyzed.
+
+MeetingMind AI addresses these challenges by combining speech recognition, artificial intelligence, natural language processing, local large language models, and voice-emotion analysis in one intelligent meeting-management platform.
+
+The application transforms unstructured conversations into organized and actionable information.
+
+---
+
+## 💡 Problem Statement
+
+Organizations, teams, students, researchers, and professionals conduct meetings regularly. However, manually recording every discussion, identifying important decisions, assigning responsibilities, and preparing summaries can be time-consuming and inefficient.
+
+MeetingMind AI provides an intelligent solution that can:
+
+1. Record meeting conversations.
+2. Convert speech into structured text.
+3. Identify and organize speaker conversations.
+4. Generate concise AI-powered summaries.
+5. Extract tasks and action items.
+6. Identify important decisions.
+7. Analyze emotional tone from voice characteristics.
+8. Store meeting records for future access.
+9. Allow users to ask questions about meeting content.
+10. Generate meaningful meeting analytics and insights.
+
+---
+
+## 🌟 Why MeetingMind AI?
+
+MeetingMind AI is designed as more than a basic audio recorder or transcription application.
+
+It combines multiple intelligent capabilities into one platform:
+
+| Traditional Meeting Tools | MeetingMind AI |
+|---|---|
+| Store only audio recordings | Generates structured meeting intelligence |
+| Require manual note-taking | Automatically creates meeting notes |
+| Provide plain transcripts | Produces summaries and key insights |
+| Require manual task tracking | Extracts action items automatically |
+| Do not track decisions | Identifies and stores decisions |
+| Limited speaker insights | Supports speaker identification |
+| No emotional understanding | Estimates emotion and voice tonality |
+| Difficult to review long meetings | Provides concise AI-generated summaries |
+| Limited interaction with records | Supports AI-powered meeting questions |
+
+---
+
+## 🔄 Complete Meeting Processing Pipeline
+
+MeetingMind AI follows an intelligent multi-stage workflow:
+
+```text
+┌─────────────────────────────┐
+│      Start New Meeting      │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│      Record Meeting Audio   │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│ Speech-to-Text Transcription│
+│        Using Deepgram       │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│ Speaker Detection and       │
+│ Conversation Organization   │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│ AI Processing with          │
+│ Ollama and Qwen 2.5 7B      │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│ Summary • Tasks • Decisions │
+│ Topics • Meeting Insights   │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│ Voice Emotion and Tonality  │
+│ Analysis using Flask API    │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│ Meeting History, Analytics, │
+│ Search and AI Chat          │
+└─────────────────────────────┘
