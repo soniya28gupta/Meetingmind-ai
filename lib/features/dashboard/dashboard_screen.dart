@@ -1881,7 +1881,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 ),
 
                 // Show countdown & attempts if not online
-                if (!isOnline && (healthState.retryCountdown > 0 || healthState.retryAttempt > 0)) ...[
+                if (!isOnline &&
+                    (healthState.retryCountdown > 0 ||
+                        healthState.retryAttempt > 0)) ...[
                   if (healthState.retryCountdown > 0) ...[
                     const SizedBox(height: 6),
                     Row(

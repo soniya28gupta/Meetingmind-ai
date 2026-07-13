@@ -39,7 +39,9 @@ class BackendConfig {
   /// Resolves the backend base URL dynamically according to environment priority.
   static String get configuredUrl {
     // In release mode or production/release environments, ALWAYS use the default production URL
-    if (kReleaseMode || environment == BackendEnv.production || environment == BackendEnv.release) {
+    if (kReleaseMode ||
+        environment == BackendEnv.production ||
+        environment == BackendEnv.release) {
       return defaultProductionUrl;
     }
 
@@ -62,13 +64,14 @@ class BackendConfig {
     }
     // Remove trailing slashes
     cleaned = cleaned.replaceAll(RegExp(r'/+$'), '');
-    
+
     // Validate that it starts with https:// in release mode, or for non-local addresses
     if (!cleaned.startsWith('https://')) {
-      final isLocal = cleaned.contains('localhost') || 
-                      cleaned.contains('127.0.0.1') || 
-                      cleaned.contains('10.0.2.2') || 
-                      cleaned.contains('192.168.');
+      final isLocal =
+          cleaned.contains('localhost') ||
+          cleaned.contains('127.0.0.1') ||
+          cleaned.contains('10.0.2.2') ||
+          cleaned.contains('192.168.');
       if (kReleaseMode || !isLocal) {
         if (cleaned.startsWith('http://')) {
           cleaned = cleaned.replaceFirst('http://', 'https://');

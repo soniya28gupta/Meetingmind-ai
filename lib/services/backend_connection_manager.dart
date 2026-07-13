@@ -89,12 +89,13 @@ class BackendConnectionManager {
       final uri = Uri.tryParse(cachedUrl);
       if (uri != null) {
         final host = uri.host;
-        final isLocal = host == 'localhost' ||
-                        host == '127.0.0.1' ||
-                        host == '10.0.2.2' ||
-                        host.startsWith('192.168.') ||
-                        host.startsWith('10.') ||
-                        host.startsWith('172.');
+        final isLocal =
+            host == 'localhost' ||
+            host == '127.0.0.1' ||
+            host == '10.0.2.2' ||
+            host.startsWith('192.168.') ||
+            host.startsWith('10.') ||
+            host.startsWith('172.');
         if (isLocal) {
           try {
             await _secureStorage.delete(key: 'last_success_backend_url');
@@ -242,10 +243,14 @@ class BackendConnectionManager {
     }
 
     if (isProdOrRelease || isPhysicalDevice) {
-      final prodUrl = _formatUrl(BackendConfig.configuredUrl.isNotEmpty 
-          ? BackendConfig.configuredUrl 
-          : BackendConfig.defaultProductionUrl);
-      logDiagnostic("Production/Release mode or Physical Device active. Central URL candidate: $prodUrl");
+      final prodUrl = _formatUrl(
+        BackendConfig.configuredUrl.isNotEmpty
+            ? BackendConfig.configuredUrl
+            : BackendConfig.defaultProductionUrl,
+      );
+      logDiagnostic(
+        "Production/Release mode or Physical Device active. Central URL candidate: $prodUrl",
+      );
       return [prodUrl];
     }
 
@@ -307,8 +312,6 @@ class BackendConnectionManager {
         logDiagnostic("Added Default Production URL candidate: $defaultUrl");
       }
     }
-
-
 
     // 5. Standard endpoints: localhost, 127.0.0.1, 10.0.2.2, host.docker.internal
     final stdUrls = [
@@ -409,7 +412,10 @@ class BackendConnectionManager {
     return ips;
   }
 
-  Future<String?> _discoverActiveEndpoint(List<String> urls, Duration timeout) async {
+  Future<String?> _discoverActiveEndpoint(
+    List<String> urls,
+    Duration timeout,
+  ) async {
     logDiagnostic("Probing ${urls.length} discovery candidates for health...");
 
     const batchSize = 10;
@@ -450,7 +456,10 @@ class BackendConnectionManager {
               socket.destroy();
 
               // HTTP health check immediately if TCP probe succeeded
-              final successState = await _checkUrlHealth(url, timeout: const Duration(seconds: 5));
+              final successState = await _checkUrlHealth(
+                url,
+                timeout: const Duration(seconds: 5),
+              );
               if (successState != null) {
                 return url;
               }
@@ -470,7 +479,10 @@ class BackendConnectionManager {
     return null;
   }
 
-  Future<EmotionHealthState?> _checkUrlHealth(String url, {required Duration timeout}) async {
+  Future<EmotionHealthState?> _checkUrlHealth(
+    String url, {
+    required Duration timeout,
+  }) async {
     final startTime = DateTime.now();
     try {
       logDiagnostic("Verifying HTTP /health at $url...");
@@ -568,7 +580,13 @@ class BackendConnectionManager {
 
     try {
       final maxAttempts = isPassive ? 1 : 12; // 12 attempts
-      final backoffDelays = [3, 5, 7, 15, 30]; // Delay BEFORE Attempt 2, 3, 4, 5, 6 is delays[attempt-1]
+      final backoffDelays = [
+        3,
+        5,
+        7,
+        15,
+        30,
+      ]; // Delay BEFORE Attempt 2, 3, 4, 5, 6 is delays[attempt-1]
 
       for (int attempt = 1; attempt <= maxAttempts; attempt++) {
         if (!isPassive) {
@@ -581,14 +599,17 @@ class BackendConnectionManager {
 
         // Check network connectivity first
         final connectivityResult = await _connectivity.checkConnectivity();
-        final hasInternet = connectivityResult.any((r) => r != ConnectivityResult.none);
+        final hasInternet = connectivityResult.any(
+          (r) => r != ConnectivityResult.none,
+        );
         if (!hasInternet) {
           logDiagnostic("No internet connection detected.");
           if (!isPassive) {
             state = state.copyWith(
               status: EmotionBackendStatus.noInternet,
               retryAttempt: attempt,
-              errorMessage: "No internet connection. Please check your Wi-Fi or mobile data.",
+              errorMessage:
+                  "No internet connection. Please check your Wi-Fi or mobile data.",
             );
           }
           if (attempt < maxAttempts) {
@@ -600,7 +621,9 @@ class BackendConnectionManager {
             final jitter = Random().nextInt(4); // 0 to 3 seconds
             final delay = baseDelay + jitter;
 
-            logDiagnostic("No Internet. Retrying attempt #${attempt + 1} in $delay seconds (jitter: $jitter)...");
+            logDiagnostic(
+              "No Internet. Retrying attempt #${attempt + 1} in $delay seconds (jitter: $jitter)...",
+            );
 
             for (int c = delay; c > 0; c--) {
               if (!isPassive) {
@@ -634,9 +657,15 @@ class BackendConnectionManager {
         bool is404 = false;
 
         try {
-          resolvedUrl = await _discoverActiveEndpoint(candidates, const Duration(seconds: 20));
+          resolvedUrl = await _discoverActiveEndpoint(
+            candidates,
+            const Duration(seconds: 20),
+          );
           if (resolvedUrl != null) {
-            successState = await _checkUrlHealth(resolvedUrl, timeout: const Duration(seconds: 20));
+            successState = await _checkUrlHealth(
+              resolvedUrl,
+              timeout: const Duration(seconds: 20),
+            );
           }
         } catch (e) {
           logDiagnostic("Endpoint discovery error: $e");
@@ -678,7 +707,8 @@ class BackendConnectionManager {
               sendTimeout: const Duration(seconds: 20),
             ),
           );
-          lastErrorMsg = "Server returned ${response.statusCode} with invalid body.";
+          lastErrorMsg =
+              "Server returned ${response.statusCode} with invalid body.";
         } catch (e) {
           lastErrorMsg = _parseException(primaryUrl, e);
           if (e is DioException) {
@@ -688,8 +718,8 @@ class BackendConnectionManager {
             } else if (code == 404) {
               is404 = true;
             } else if (e.type == DioExceptionType.connectionTimeout ||
-                       e.type == DioExceptionType.receiveTimeout ||
-                       e.type == DioExceptionType.sendTimeout) {
+                e.type == DioExceptionType.receiveTimeout ||
+                e.type == DioExceptionType.sendTimeout) {
               isWaking = true;
             }
           } else if (e is FormatException && e.message == "Model not ready") {
@@ -713,7 +743,8 @@ class BackendConnectionManager {
             displayMsg = "Cloud server is starting. Retrying automatically...";
           } else if (is404) {
             nextStatus = EmotionBackendStatus.offline;
-            displayMsg = "/health endpoint not found. Verify backend configuration.";
+            displayMsg =
+                "/health endpoint not found. Verify backend configuration.";
           } else {
             nextStatus = EmotionBackendStatus.offline;
             displayMsg = lastErrorMsg;
@@ -728,7 +759,9 @@ class BackendConnectionManager {
         }
 
         if (attempt < maxAttempts) {
-          logDiagnostic("Attempt #$attempt failed. Retrying in $currentDelay seconds...");
+          logDiagnostic(
+            "Attempt #$attempt failed. Retrying in $currentDelay seconds...",
+          );
           for (int c = currentDelay; c > 0; c--) {
             if (!isPassive) {
               state = state.copyWith(retryCountdown: c);
@@ -745,7 +778,8 @@ class BackendConnectionManager {
         state = state.copyWith(
           status: EmotionBackendStatus.offline,
           retryCountdown: 0,
-          errorMessage: state.errorMessage ?? "Unable to connect to the emotion service.",
+          errorMessage:
+              state.errorMessage ?? "Unable to connect to the emotion service.",
         );
       }
     } catch (e) {
@@ -768,7 +802,10 @@ class BackendConnectionManager {
       timer,
     ) async {
       logDiagnostic("Sending heartbeat ping to ${state.activeUrl}/health...");
-      final healthState = await _checkUrlHealth(state.activeUrl, timeout: const Duration(seconds: 15));
+      final healthState = await _checkUrlHealth(
+        state.activeUrl,
+        timeout: const Duration(seconds: 15),
+      );
       if (healthState != null) {
         state = state.copyWith(
           status: EmotionBackendStatus.online,

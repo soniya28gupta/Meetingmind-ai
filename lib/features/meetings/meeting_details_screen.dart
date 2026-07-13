@@ -4222,7 +4222,8 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
 
     final cardColor = getColor(emotion ?? '');
     final emoji = getEmoji(emotion ?? '');
-    final isOnline = healthState.status == EmotionBackendStatus.connected ||
+    final isOnline =
+        healthState.status == EmotionBackendStatus.connected ||
         healthState.status == EmotionBackendStatus.online;
 
     // STATE 3 & 4: COMPLETED / FALLBACK ACTIVE (Showing results)
