@@ -1464,7 +1464,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.connected:
       case EmotionBackendStatus.processing:
       case EmotionBackendStatus.analyzing:
-        statusLabel = 'Emotion Service Online';
+        statusLabel = 'Emotion service is online and ready.';
         statusBadgeColor = AppColors.success.withValues(alpha: 0.15);
         statusBadgeText = AppColors.success;
         statusIcon = Icons.check_circle_rounded;
@@ -1473,7 +1473,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         break;
       case EmotionBackendStatus.checking:
       case EmotionBackendStatus.connecting:
-        statusLabel = 'Checking service...';
+        statusLabel = 'Checking emotion service...';
         statusBadgeColor = Colors.orange.withValues(alpha: 0.15);
         statusBadgeText = Colors.orange;
         statusIcon = Icons.cloud_sync_rounded;
@@ -1483,7 +1483,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.wakingServer:
       case EmotionBackendStatus.reconnecting:
       case EmotionBackendStatus.retrying:
-        statusLabel = 'Starting emotion service...\nThe cloud server is waking up. This may take up to 60–90 seconds.';
+        statusLabel = 'Cloud server is waking up. Please wait...';
         statusBadgeColor = Colors.orange.withValues(alpha: 0.15);
         statusBadgeText = Colors.orange;
         statusIcon = Icons.hourglass_empty_rounded;
@@ -1491,7 +1491,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         prefix = '🟠 ';
         break;
       case EmotionBackendStatus.degraded:
-        statusLabel = 'Service temporarily unavailable';
+        statusLabel = 'Unable to connect to the emotion service.';
         statusBadgeColor = Colors.yellow.withValues(alpha: 0.15);
         statusBadgeText = Colors.yellow[700] ?? Colors.yellow;
         statusIcon = Icons.warning_amber_rounded;
@@ -1502,7 +1502,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.fallbackActive:
       case EmotionBackendStatus.unknown:
       default:
-        statusLabel = 'Emotion Service Offline';
+        statusLabel = 'Unable to connect to the emotion service.';
         statusBadgeColor = AppColors.error.withValues(alpha: 0.15);
         statusBadgeText = AppColors.error;
         statusIcon = Icons.cloud_off_rounded;
