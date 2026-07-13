@@ -1,182 +1,210 @@
 # MeetingMind AI 🚀
 
-MeetingMind AI is an intelligent meeting assistant built with Flutter that helps users record, transcribe, analyze, and summarize meetings using Artificial Intelligence.
+> An AI-powered intelligent meeting assistant for recording, transcribing, summarizing, analyzing, and transforming conversations into actionable insights.
 
-The application automatically converts conversations into structured meeting notes, identifies speakers, generates summaries, extracts action items, tracks decisions, and provides AI-powered insights.
+MeetingMind AI is a Flutter-based intelligent meeting productivity application that helps users capture conversations, generate structured meeting notes, analyze speaker emotions, extract action items, track decisions, and interact with meeting content using Artificial Intelligence.
+
+The application combines speech recognition, large language models, emotion analysis, and meeting analytics to make meetings more organized, searchable, and productive.
 
 ---
 
-## ✨ Features
+## 🌐 Live Services
+
+### Emotion Analysis Backend
+
+The MeetingMind Emotion API is deployed on Render:
+
+https://meetingmind-ai-lgka.onrender.com
+
+Health-check endpoint:
+
+https://meetingmind-ai-lgka.onrender.com/health
+
+Basic emotion endpoint:
+
+https://meetingmind-ai-lgka.onrender.com/emotion
+
+> The Render free service may take approximately 30–90 seconds to wake after a period of inactivity.
+
+---
+
+## ✨ Key Features
 
 ### 🎙️ Audio Recording
 
-* Record meetings directly from the mobile application.
-* High-quality audio capture.
-* Real-time meeting recording support.
+- Record meetings directly from the mobile application.
+- Capture high-quality meeting audio.
+- Support real-time meeting recording.
+- Manage active recording sessions.
 
 ### 📝 Speech-to-Text Transcription
 
-* Automatic transcription of meeting conversations.
-* Converts spoken discussions into searchable text.
-* Powered by AI speech recognition.
+- Automatically convert meeting conversations into text.
+- Generate searchable meeting transcripts.
+- Support real-time speech recognition.
+- Powered by Deepgram speech-processing technology.
 
 ### 👥 Speaker Identification
 
-* Detects and separates multiple speakers.
-* Labels conversations as Speaker 1, Speaker 2, etc.
-* Organizes meeting discussions clearly.
+- Detect and separate multiple speakers.
+- Label participants as Speaker 1, Speaker 2, and more.
+- Organize conversations by speaker.
+- Improve meeting readability and analysis.
 
-### 🤖 AI Meeting Summary
+### 🤖 AI Meeting Summarization
 
-* Generates concise meeting summaries.
-* Highlights key discussion points.
-* Saves time reviewing long conversations.
+- Generate concise and structured meeting summaries.
+- Highlight important discussion points.
+- Reduce the time required to review long meetings.
+- Generate useful insights from meeting conversations.
 
-### ✅ Action Item Extraction
+### ✅ Action-Item Extraction
 
-* Detects assigned tasks automatically.
-* Extracts responsibilities and deadlines.
-* Creates structured follow-up actions.
+- Automatically identify assigned tasks.
+- Extract responsibilities and deadlines.
+- Generate structured follow-up actions.
+- Help teams track pending work.
 
 ### 📌 Decision Tracking
 
-* Identifies important decisions made during meetings.
-* Stores decisions for future reference.
+- Identify important decisions made during meetings.
+- Store decisions for future reference.
+- Maintain a clear record of meeting outcomes.
 
-### 😊 Emotion & Voice Tonality Analysis
+### 😊 Emotion and Voice-Tonality Analysis
 
-* Analyzes speaker tone and emotional state.
-* Detects emotions such as:
+MeetingMind AI analyzes vocal characteristics to estimate emotional tone.
 
-  * 😀 Happy
-  * 😐 Neutral
-  * 😟 Concerned
-  * 😠 Frustrated
-  * 🎯 Confident
-* Displays emotional insights for each speaker.
+Supported emotion insights include:
 
-### 💬 AI Chat Assistant
+- 😀 Happy
+- 😐 Neutral
+- 😟 Concerned
+- 😠 Frustrated
+- 🎯 Confident
 
-* Ask questions about recorded meetings.
-* Retrieve information instantly.
-* Generate additional insights from meeting content.
+The emotion-analysis backend processes audio features such as:
+
+- Pitch
+- Energy
+- Spectral characteristics
+- Zero-crossing rate
+- Voice activity
+- Tonal variation
+
+### 💬 AI Meeting Assistant
+
+- Ask questions about recorded meetings.
+- Retrieve information from meeting content.
+- Generate additional insights.
+- Understand summaries, decisions, and action items.
 
 ### 📊 Meeting Analytics
 
-* Track meeting activity.
-* View performance metrics.
-* Analyze participation and engagement.
+- Track meeting activity.
+- Analyze participation and engagement.
+- View meeting-performance metrics.
+- Explore speaker and conversation insights.
 
 ### 🗂️ Meeting History
 
-* Store and manage previous meetings.
-* Access summaries and transcripts anytime.
+- Store and manage previous meetings.
+- Access summaries and transcripts anytime.
+- Review decisions and action items.
+- Maintain organized meeting records.
 
-### 🔍 Search Functionality
+### 🔍 Intelligent Search
 
-* Search transcripts, summaries, and meeting records quickly.
+- Search meeting transcripts.
+- Find summaries and important discussions.
+- Locate previous meeting records quickly.
 
 ---
 
 ## 🏗️ Technology Stack
 
-### Frontend
+### Mobile Application
 
-* Flutter
-* Dart
-
-### State Management
-
-* Riverpod
-
-### Local Database
-
-* Isar Database
+| Technology | Purpose |
+|---|---|
+| Flutter | Cross-platform application development |
+| Dart | Application programming language |
+| Riverpod | State management |
+| Isar Database | Local data storage |
+| Dio | HTTP networking |
+| WebSocket | Real-time communication |
 
 ### Backend
 
-* Flask (Python)
+| Technology | Purpose |
+|---|---|
+| Python | Backend programming language |
+| Flask | REST API framework |
+| Gunicorn | Production WSGI server |
+| Render | Cloud backend deployment |
+| NumPy | Numerical audio processing |
+| SciPy | Signal and audio analysis |
+| Static FFmpeg | Audio conversion and processing |
 
-### AI & Machine Learning
+### Artificial Intelligence
 
-* Ollama
-* Qwen 2.5 7B Model
-* OpenAI Integration
+| Technology | Purpose |
+|---|---|
+| Ollama | Local AI model execution |
+| Qwen 2.5 7B | Meeting understanding and generation |
+| OpenAI Integration | AI-powered meeting intelligence |
+| Custom Emotion Analysis | Voice-tone and emotion estimation |
 
 ### Speech Processing
 
-* Deepgram API
-
-### Networking
-
-* Dio
-* WebSocket
+| Technology | Purpose |
+|---|---|
+| Deepgram API | Speech-to-text transcription |
+| FFmpeg | Audio conversion |
+| WebSocket | Real-time transcription |
 
 ### Authentication
 
-* Firebase Authentication
+| Technology | Purpose |
+|---|---|
+| Firebase Authentication | User authentication and account management |
 
 ---
 
 ## 🧠 AI Capabilities
 
-The application uses AI to:
+MeetingMind AI uses artificial intelligence to:
 
-* Generate meeting summaries.
-* Extract action items.
-* Identify meeting decisions.
-* Analyze conversations.
-* Provide speaker insights.
-* Detect emotional tone.
-* Answer meeting-related questions.
-
----
-
-## 📱 Use Cases
-
-### Business Meetings
-
-Automatically document discussions and action items.
-
-### Team Standups
-
-Track responsibilities and project updates.
-
-### Client Meetings
-
-Generate summaries and follow-up tasks.
-
-### Educational Discussions
-
-Record lectures, discussions, and study sessions.
-
-### Remote Collaboration
-
-Keep meeting records accessible and organized.
+- Generate structured meeting summaries.
+- Extract action items and responsibilities.
+- Identify important meeting decisions.
+- Analyze meeting conversations.
+- Generate speaker-related insights.
+- Estimate emotional tone from voice.
+- Answer meeting-related questions.
+- Organize unstructured conversations.
+- Improve meeting productivity.
 
 ---
 
-## 🔒 Privacy
+## 🔄 Application Workflow
 
-Meeting data is processed locally where possible using Ollama and local AI models, reducing dependency on external services.
+```text
+Meeting Audio
+      ↓
+Audio Recording
+      ↓
+Speech-to-Text Transcription
+      ↓
+Speaker Identification
+      ↓
+AI Conversation Analysis
+      ↓
+Meeting Summary
+      ↓
+Action Items and Decisions
+      ↓
+Emotion and Voice-Tone Analysis
+      ↓
+Meeting Analytics and AI Insights
 
----
-
-## 🚀 Future Enhancements
-
-* Advanced Speaker Diarization
-* Real-Time Emotion Detection
-* Meeting Attendance Analytics
-* Multi-Language Support
-* AI-Generated Follow-Up Emails
-* Calendar Integration
-* Cloud Synchronization
-* Advanced Meeting Intelligence Dashboard
-
----
-
-## 👨‍💻 Developer
-
-Developed by **Soniya Gupta**
-
-An AI-powered meeting productivity platform focused on intelligent meeting management, automation, and insights.
