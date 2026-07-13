@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import concurrent.futures
 import requests
+import uuid
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
@@ -124,66 +125,39 @@ def classify_emotion(pitch_vals, rms_vals, zcr_vals, pauses_ratio):
 @app.route('/', methods=['GET'])
 def root():
     """Root endpoint returning service status."""
-    print("[Flask Backend] GET / request received. Headers: %s" % dict(request.headers))
-    resp = jsonify({
+    return jsonify({
+        "status": "online",
         "service": "MeetingMind Emotion API",
-        "status": "online"
+        "version": "1.0.0"
     })
-    print("[Flask Backend] GET / response status: 200")
-    return resp
 
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint returning detailed status."""
-    print("[Flask Backend] GET /health request received. Headers: %s" % dict(request.headers))
-    
-    # Check Deepgram connectivity via socket
-    deepgram_status = "connected"
-    try:
-        socket.setdefaulttimeout(2.0)
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("api.deepgram.com", 443))
-        s.close()
-        print("[Flask Backend] Deepgram connection check: OK")
-    except Exception as e:
-        deepgram_status = f"unavailable: {str(e)}"
-        print("[Flask Backend] Deepgram connection check: FAILED (%s)" % str(e))
-        
-    # Check Firebase connectivity via socket
-    firebase_status = "connected"
-    try:
-        socket.setdefaulttimeout(2.0)
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("firebase.googleapis.com", 443))
-        s.close()
-        print("[Flask Backend] Firebase connection check: OK")
-    except Exception as e:
-        firebase_status = f"unavailable: {str(e)}"
-        print("[Flask Backend] Firebase connection check: FAILED (%s)" % str(e))
-
-    uptime_seconds = time.time() - start_time
-    
-    resp = jsonify({
-        "status": "online",
-        "service": "emotion-analysis",
+    return jsonify({
+        "status": "healthy",
+        "service": "MeetingMind Emotion API",
         "version": "1.0.0",
-        "model_loaded": True,
-        "uptime": int(uptime_seconds),
-        "deepgram": deepgram_status,
-        "firebase": firebase_status
+        "model_loaded": True
     })
-    print("[Flask Backend] GET /health response status: 200, Body: %s" % resp.get_data(as_text=True))
-    return resp
+
+@app.route('/ready', methods=['GET'])
+def ready():
+    """Ready check endpoint."""
+    return jsonify({
+        "status": "ready",
+        "model_loaded": True
+    })
 
 @app.route('/emotion', methods=['GET', 'POST'])
 def emotion():
     """Fallback basic emotion analysis endpoint."""
-    print("[Flask Backend] /emotion request received. Method: %s, Headers: %s" % (request.method, dict(request.headers)))
+    print("Emotion request received")
     resp = jsonify({
         "emotion": "Neutral",
         "confidence": 0.92
     })
-    print("[Flask Backend] /emotion response status: 200, Body: %s" % resp.get_data(as_text=True))
+    print("Response sent")
     return resp
 
 @app.route('/analyze-emotion', methods=['POST'])
@@ -204,8 +178,9 @@ def analyze_emotion():
     if not ext:
         ext = '.wav'
         
-    input_path = os.path.join(temp_dir, f"input_emotion_{int(time.time())}{ext}")
-    output_wav_path = os.path.join(temp_dir, f"converted_emotion_{int(time.time())}{ext}.wav")
+    unique_id = uuid.uuid4().hex
+    input_path = os.path.join(temp_dir, f"input_emotion_{unique_id}{ext}")
+    output_wav_path = os.path.join(temp_dir, f"converted_emotion_{unique_id}.wav")
     
     try:
         audio_file.save(input_path)
@@ -688,10 +663,11 @@ def transcribe_file():
     _, ext = os.path.splitext(audio_file.filename)
     if not ext:
         ext = '.tmp'
-    input_path = os.path.join(temp_dir, f"input_raw_{int(time.time())}{ext}")
+    unique_id = uuid.uuid4().hex
+    input_path = os.path.join(temp_dir, f"input_raw_{unique_id}{ext}")
     audio_file.save(input_path)
     
-    output_wav_path = os.path.join(temp_dir, f"converted_{int(time.time())}.wav")
+    output_wav_path = os.path.join(temp_dir, f"converted_{unique_id}.wav")
     
     try:
         print(f"Decoding {input_path} to {output_wav_path} via ffmpeg...")
@@ -726,7 +702,7 @@ def transcribe_file():
         if len(trimmed_audio) == 0:
             return jsonify({"error": "No speech detected in audio file. Ensure the audio is not silent."}), 400
 
-        preprocessed_path = os.path.join(temp_dir, f"preprocessed_{int(time.time())}.wav")
+        preprocessed_path = os.path.join(temp_dir, f"preprocessed_{unique_id}.wav")
         save_data = (trimmed_audio * 32767.0).astype(np.int16)
         scipy.io.wavfile.write(preprocessed_path, sr, save_data)
         
@@ -767,7 +743,7 @@ def transcribe_file():
             end_sample = int(end * sr)
             chunk_data = trimmed_audio[start_sample:end_sample]
             
-            chunk_wav_path = os.path.join(temp_dir, f"chunk_{idx}_{int(time.time())}.wav")
+            chunk_wav_path = os.path.join(temp_dir, f"chunk_{idx}_{unique_id}.wav")
             scipy.io.wavfile.write(chunk_wav_path, sr, (chunk_data * 32767.0).astype(np.int16))
             chunk_files.append((idx, chunk_wav_path, start))
 

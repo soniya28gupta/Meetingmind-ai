@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/schemas/meeting_models.dart';
 import '../features/settings/settings_provider.dart';
@@ -25,20 +26,32 @@ class EmotionService {
   }
 
   Future<String> _findWorkingBackendUrl() async {
+    // 1. In release mode or production/release environments, ALWAYS return the production URL
+    final env = BackendConfig.environment;
+    final isProdOrRelease =
+        env == BackendEnv.production ||
+        env == BackendEnv.release ||
+        kReleaseMode;
+
+    if (isProdOrRelease) {
+      return BackendConfig.configuredUrl;
+    }
+
+    // 2. Otherwise in dev/debug mode, check if we have resolved an activeUrl from health check
     if (_ref != null) {
-      // Use the activeUrl resolved by the EmotionHealthService!
       final activeUrl = _ref.read(emotionHealthServiceProvider).activeUrl;
       if (activeUrl.isNotEmpty) {
         return activeUrl;
       }
     }
 
-    // Check configured environment URL
+    // 3. Fallback to configuredUrl if non-empty
     final envUrl = BackendConfig.configuredUrl;
     if (envUrl.isNotEmpty) {
       return envUrl;
     }
 
+    // 4. In debug/development mode only: try to derive from Ollama URL
     if (_ref != null) {
       final ollamaUrl = _ref.read(settingsProvider).ollamaUrl;
       if (ollamaUrl.isNotEmpty) {
@@ -58,7 +71,7 @@ class EmotionService {
         }
       }
     }
-    // Fallback if settings are not loaded yet or invalid:
+    // Fallback if settings are not loaded yet or invalid in debug mode:
     return 'http://10.0.2.2:5000';
   }
 
@@ -70,9 +83,9 @@ class EmotionService {
       final response = await _dio.get(
         '$activeUrl/emotion',
         options: Options(
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-          sendTimeout: const Duration(seconds: 10),
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+          sendTimeout: const Duration(seconds: 15),
         ),
       );
       print("Emotion response received");
@@ -124,9 +137,9 @@ class EmotionService {
         '$activeUrl/analyze_audio',
         data: formData,
         options: Options(
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-          sendTimeout: const Duration(seconds: 10),
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 120),
+          sendTimeout: const Duration(seconds: 60),
         ),
       );
 

@@ -13,12 +13,17 @@ import '../core/config/backend_config.dart';
 import 'backend_connection_manager.dart';
 
 enum EmotionBackendStatus {
-  connected, // ONLINE
-  offline, // OFFLINE
-  connecting, // CONNECTING
-  reconnecting, // RECONNECTING
-  retrying, // RECONNECTING fallback
-  fallbackActive, // OFFLINE fallback
+  unknown,
+  checking,
+  wakingServer,
+  online,
+  degraded,
+  offline,
+  connected, // Keep for backward compatibility/mapping
+  connecting, // Keep for backward compatibility/mapping
+  reconnecting, // Keep for backward compatibility/mapping
+  retrying, // Keep for backward compatibility/mapping
+  fallbackActive, // Keep for backward compatibility/mapping
   processing, // Compatibility: Backend processing request
   analyzing, // Compatibility: Backend analyzing request
 }
@@ -51,17 +56,22 @@ class EmotionHealthState {
   });
 
   bool get isOnline =>
+      status == EmotionBackendStatus.online ||
       status == EmotionBackendStatus.connected ||
       status == EmotionBackendStatus.processing ||
       status == EmotionBackendStatus.analyzing;
 
   bool get isOffline =>
       status == EmotionBackendStatus.offline ||
-      status == EmotionBackendStatus.fallbackActive;
+      status == EmotionBackendStatus.fallbackActive ||
+      status == EmotionBackendStatus.unknown;
 
-  bool get isConnecting => status == EmotionBackendStatus.connecting;
+  bool get isConnecting =>
+      status == EmotionBackendStatus.checking ||
+      status == EmotionBackendStatus.connecting;
 
   bool get isReconnecting =>
+      status == EmotionBackendStatus.wakingServer ||
       status == EmotionBackendStatus.reconnecting ||
       status == EmotionBackendStatus.retrying;
 

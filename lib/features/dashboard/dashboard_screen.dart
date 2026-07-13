@@ -1456,8 +1456,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     Color statusBadgeColor;
     Color statusBadgeText;
     IconData statusIcon;
+    String badgeText;
+    String prefix;
 
     switch (healthState.status) {
+      case EmotionBackendStatus.online:
       case EmotionBackendStatus.connected:
       case EmotionBackendStatus.processing:
       case EmotionBackendStatus.analyzing:
@@ -1465,26 +1468,46 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         statusBadgeColor = AppColors.success.withValues(alpha: 0.15);
         statusBadgeText = AppColors.success;
         statusIcon = Icons.check_circle_rounded;
+        badgeText = 'ONLINE';
+        prefix = '🟢 ';
         break;
+      case EmotionBackendStatus.checking:
       case EmotionBackendStatus.connecting:
-        statusLabel = 'Connecting...';
-        statusBadgeColor = Colors.yellow.withValues(alpha: 0.15);
-        statusBadgeText = Colors.yellow[700] ?? Colors.yellow;
-        statusIcon = Icons.cloud_sync_rounded;
-        break;
-      case EmotionBackendStatus.reconnecting:
-      case EmotionBackendStatus.retrying:
-        statusLabel = 'Reconnecting...';
+        statusLabel = 'Checking service...';
         statusBadgeColor = Colors.orange.withValues(alpha: 0.15);
         statusBadgeText = Colors.orange;
-        statusIcon = Icons.sync_problem_rounded;
+        statusIcon = Icons.cloud_sync_rounded;
+        badgeText = 'CHECKING';
+        prefix = '🟠 ';
+        break;
+      case EmotionBackendStatus.wakingServer:
+      case EmotionBackendStatus.reconnecting:
+      case EmotionBackendStatus.retrying:
+        statusLabel = 'Starting emotion service...\nThe cloud server is waking up. This may take up to 60–90 seconds.';
+        statusBadgeColor = Colors.orange.withValues(alpha: 0.15);
+        statusBadgeText = Colors.orange;
+        statusIcon = Icons.hourglass_empty_rounded;
+        badgeText = 'WAKING';
+        prefix = '🟠 ';
+        break;
+      case EmotionBackendStatus.degraded:
+        statusLabel = 'Service temporarily unavailable';
+        statusBadgeColor = Colors.yellow.withValues(alpha: 0.15);
+        statusBadgeText = Colors.yellow[700] ?? Colors.yellow;
+        statusIcon = Icons.warning_amber_rounded;
+        badgeText = 'DEGRADED';
+        prefix = '🟡 ';
         break;
       case EmotionBackendStatus.offline:
       case EmotionBackendStatus.fallbackActive:
-        statusLabel = 'Emotion Service Temporarily Unavailable';
+      case EmotionBackendStatus.unknown:
+      default:
+        statusLabel = 'Emotion Service Offline';
         statusBadgeColor = AppColors.error.withValues(alpha: 0.15);
         statusBadgeText = AppColors.error;
         statusIcon = Icons.cloud_off_rounded;
+        badgeText = 'OFFLINE';
+        prefix = '🔴 ';
         break;
     }
 
@@ -1660,7 +1683,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              isOnline ? '🟢 $statusLabel' : '🔴 $statusLabel',
+                              '$prefix$statusLabel',
                               style: TextStyle(
                                 color: statusBadgeText,
                                 fontWeight: FontWeight.bold,
@@ -1683,7 +1706,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        isOnline ? 'ONLINE' : 'OFFLINE',
+                        badgeText,
                         style: TextStyle(
                           color: statusBadgeText,
                           fontSize: 9,
@@ -1849,31 +1872,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   ],
                 ),
 
-                // Show countdown & attempts if not online and currently attempting
-                if (!isOnline &&
-                    (healthState.isConnecting ||
-                        healthState.isReconnecting)) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Retry Countdown:',
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 11,
+                // Show countdown & attempts if not online
+                if (!isOnline && (healthState.retryCountdown > 0 || healthState.retryAttempt > 0)) ...[
+                  if (healthState.retryCountdown > 0) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Retry Countdown:',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 11,
+                          ),
                         ),
-                      ),
-                      Text(
-                        '${healthState.retryCountdown}s',
-                        style: const TextStyle(
-                          color: AppColors.warning,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                        Text(
+                          '${healthState.retryCountdown}s',
+                          style: const TextStyle(
+                            color: AppColors.warning,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                   if (healthState.retryAttempt > 0) ...[
                     const SizedBox(height: 6),
                     Row(
@@ -2073,7 +2096,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                         ? 'Run Test'
                         : (healthState.isConnecting ||
                                   healthState.isReconnecting
-                              ? 'Discovering...'
+                              ? 'Checking Connection...'
                               : 'Retry Connection'),
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),

@@ -4009,8 +4009,11 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
     }
 
     // RETRYING / RECONNECTING STATE
-    if (healthState.status == EmotionBackendStatus.retrying) {
-      final attemptStr = "Attempt ${healthState.retryAttempt}/3";
+    // RETRYING / RECONNECTING STATE
+    if (healthState.status == EmotionBackendStatus.retrying ||
+        healthState.status == EmotionBackendStatus.wakingServer ||
+        healthState.status == EmotionBackendStatus.checking) {
+      final attemptStr = "Attempt ${healthState.retryAttempt}";
       return GlassCard(
         borderColor: AppColors.warning.withValues(alpha: 0.3),
         child: Padding(
@@ -4027,7 +4030,7 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                'Emotion Analysis Status: Retrying ($attemptStr)',
+                'Emotion Analysis Status: ${healthState.status == EmotionBackendStatus.checking ? 'Checking' : 'Reconnecting'} (${healthState.retryAttempt > 0 ? attemptStr : 'Initial Probe'})',
                 style: const TextStyle(
                   color: AppColors.warning,
                   fontWeight: FontWeight.bold,
@@ -4036,7 +4039,7 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                healthState.errorMessage ?? 'Reconnecting to Flask backend...',
+                healthState.errorMessage ?? 'Connecting to Flask backend...',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
@@ -4050,7 +4053,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
     }
 
     // STATE 2: CONNECTED (No results yet)
-    if (!hasEmotion && healthState.status == EmotionBackendStatus.connected) {
+    if (!hasEmotion &&
+        (healthState.status == EmotionBackendStatus.connected ||
+            healthState.status == EmotionBackendStatus.online)) {
       return GlassCard(
         borderColor: AppColors.success.withValues(alpha: 0.3),
         child: Padding(
@@ -4112,7 +4117,9 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
     // STATE 5: FAILED (No emotion, offline/fallback active)
     if (!hasEmotion &&
         (healthState.status == EmotionBackendStatus.offline ||
-            healthState.status == EmotionBackendStatus.fallbackActive)) {
+            healthState.status == EmotionBackendStatus.fallbackActive ||
+            healthState.status == EmotionBackendStatus.unknown ||
+            healthState.status == EmotionBackendStatus.degraded)) {
       return GlassCard(
         borderColor: AppColors.error.withValues(alpha: 0.3),
         child: Padding(
@@ -4215,7 +4222,8 @@ class _MeetingDetailsScreenState extends ConsumerState<MeetingDetailsScreen>
 
     final cardColor = getColor(emotion ?? '');
     final emoji = getEmoji(emotion ?? '');
-    final isOnline = healthState.status == EmotionBackendStatus.connected;
+    final isOnline = healthState.status == EmotionBackendStatus.connected ||
+        healthState.status == EmotionBackendStatus.online;
 
     // STATE 3 & 4: COMPLETED / FALLBACK ACTIVE (Showing results)
     return GlassCard(

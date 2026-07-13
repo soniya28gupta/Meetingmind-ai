@@ -37,16 +37,15 @@ class BackendConfig {
 
   /// Resolves the backend base URL dynamically according to environment priority.
   static String get configuredUrl {
-    // 1. Check environment variable (highest priority)
+    // In release mode or production/release environments, ALWAYS use the default production URL
+    if (kReleaseMode || environment == BackendEnv.production || environment == BackendEnv.release) {
+      return defaultProductionUrl;
+    }
+
+    // Otherwise, check environment variable (highest priority)
     final envUrl = dotenv.env['EMOTION_API_URL'] ?? dotenv.env['BACKEND_URL'];
     if (envUrl != null && envUrl.trim().isNotEmpty) {
       return _normalizeUrl(envUrl);
-    }
-
-    // 2. Production or Release environments fall back to the production URL
-    final env = environment;
-    if (env == BackendEnv.production || env == BackendEnv.release) {
-      return defaultProductionUrl;
     }
 
     // Otherwise, return empty to trigger dynamic local discovery (subnet ping / emulator fallbacks)
@@ -61,7 +60,22 @@ class BackendConfig {
       cleaned = cleaned.substring(1, cleaned.length - 1).trim();
     }
     // Remove trailing slashes
-    cleaned = cleaned.replaceAll(RegExp(r'/$'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'/+$'), '');
+    
+    // Validate that it starts with https:// in release mode, or for non-local addresses
+    if (!cleaned.startsWith('https://')) {
+      final isLocal = cleaned.contains('localhost') || 
+                      cleaned.contains('127.0.0.1') || 
+                      cleaned.contains('10.0.2.2') || 
+                      cleaned.contains('192.168.');
+      if (kReleaseMode || !isLocal) {
+        if (cleaned.startsWith('http://')) {
+          cleaned = cleaned.replaceFirst('http://', 'https://');
+        } else {
+          cleaned = 'https://$cleaned';
+        }
+      }
+    }
     return cleaned;
   }
 }
