@@ -90,7 +90,7 @@ class WearableService {
     } catch (e) {
       print('[WearableService ERROR] Connection to ${device.name} failed: $e');
       _handleDisconnect();
-      rethrow;
+      // Do not rethrow — callers are not required to handle Bluetooth errors
     }
   }
 
@@ -234,7 +234,9 @@ class WearableService {
       Future.delayed(const Duration(seconds: 5), () {
         if (_connectedDevice != null &&
             _connectedDevice?.isConnected == false) {
-          connect(_connectedDevice!);
+          connect(_connectedDevice!).catchError((e) {
+            print('[WearableService] Auto-reconnect failed: $e');
+          });
         }
       });
     }
