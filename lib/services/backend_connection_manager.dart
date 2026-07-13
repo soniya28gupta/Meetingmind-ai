@@ -42,12 +42,7 @@ class BackendConnectionManager {
   Timer? _passiveProbeTimer;
 
   bool _isChecking = false;
-  int _connectionAttempts = 0;
   bool _isInitialized = false;
-
-  dynamic _lastException;
-  int? _lastStatusCode;
-  DateTime? _firstAttemptTime;
 
   // History logs
   final List<String> _diagnosticsLog = [];
@@ -229,9 +224,28 @@ class BackendConnectionManager {
         env == BackendEnv.release ||
         kReleaseMode;
 
-    if (isProdOrRelease) {
-      final prodUrl = _formatUrl(BackendConfig.configuredUrl);
-      logDiagnostic("Production/Release mode active. Central URL candidate: $prodUrl");
+    // Detect if running on a physical Android/iOS device
+    bool isPhysicalDevice = true;
+    if (!kIsWeb) {
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        try {
+          final androidInfo = await deviceInfo.androidInfo;
+          isPhysicalDevice = androidInfo.isPhysicalDevice;
+        } catch (_) {}
+      } else if (Platform.isIOS) {
+        try {
+          final iosInfo = await deviceInfo.iosInfo;
+          isPhysicalDevice = iosInfo.isPhysicalDevice;
+        } catch (_) {}
+      }
+    }
+
+    if (isProdOrRelease || isPhysicalDevice) {
+      final prodUrl = _formatUrl(BackendConfig.configuredUrl.isNotEmpty 
+          ? BackendConfig.configuredUrl 
+          : BackendConfig.defaultProductionUrl);
+      logDiagnostic("Production/Release mode or Physical Device active. Central URL candidate: $prodUrl");
       return [prodUrl];
     }
 
@@ -458,8 +472,6 @@ class BackendConnectionManager {
 
   Future<EmotionHealthState?> _checkUrlHealth(String url, {required Duration timeout}) async {
     final startTime = DateTime.now();
-    _lastException = null;
-    _lastStatusCode = null;
     try {
       logDiagnostic("Verifying HTTP /health at $url...");
       final response = await _dio!.get(
@@ -474,63 +486,61 @@ class BackendConnectionManager {
       final latency = DateTime.now().difference(startTime).inMilliseconds;
       if (response.statusCode != null &&
           response.statusCode! >= 200 &&
-          response.statusCode! < 300) {
+          response.statusCode! < 300 &&
+          response.data != null) {
         final data = response.data;
-        String version = '1.0.0';
-        String uptimeStr = 'N/A';
-        
         if (data is Map) {
-          version = data['version']?.toString() ?? '1.0.0';
-          
           final isModelLoaded = data['model_loaded'] ?? true;
           final statusStr = data['status']?.toString().toLowerCase() ?? '';
           if (isModelLoaded == false || statusStr == 'starting') {
             logDiagnostic("Server is starting up (model not ready yet).");
             throw const FormatException("Model not ready");
           }
+          if ((data['status'] == 'healthy' || data['status'] == 'online') &&
+              data['service'] == 'MeetingMind Emotion API') {
+            final version = data['version']?.toString() ?? '1.0.0';
 
-          final rawUptime = data['uptime'];
-          if (rawUptime != null) {
-            if (rawUptime is num) {
-              final totalSeconds = rawUptime.toInt();
-              final hours = totalSeconds ~/ 3600;
-              final minutes = (totalSeconds % 3600) ~/ 60;
-              final seconds = totalSeconds % 60;
-              if (hours > 0) {
-                uptimeStr = '${hours}h ${minutes}m ${seconds}s';
-              } else if (minutes > 0) {
-                uptimeStr = '${minutes}m ${seconds}s';
+            // Format uptime nicely if it is a number of seconds
+            final rawUptime = data['uptime'];
+            String uptimeStr = 'Unknown';
+            if (rawUptime != null) {
+              if (rawUptime is num) {
+                final totalSeconds = rawUptime.toInt();
+                final hours = totalSeconds ~/ 3600;
+                final minutes = (totalSeconds % 3600) ~/ 60;
+                final seconds = totalSeconds % 60;
+                if (hours > 0) {
+                  uptimeStr = '${hours}h ${minutes}m ${seconds}s';
+                } else if (minutes > 0) {
+                  uptimeStr = '${minutes}m ${seconds}s';
+                } else {
+                  uptimeStr = '${seconds}s';
+                }
               } else {
-                uptimeStr = '${seconds}s';
+                uptimeStr = rawUptime.toString();
               }
-            } else {
-              uptimeStr = rawUptime.toString();
             }
+
+            return EmotionHealthState(
+              status: EmotionBackendStatus.online,
+              activeUrl: url,
+              responseTimeMs: latency,
+              retryAttempt: 0,
+              retryCountdown: 0,
+              errorMessage: null,
+              serverVersion: version,
+              deviceType: state.deviceType,
+              lastSuccessTime: state.lastSuccessTime,
+              uptime: uptimeStr,
+              connectionHistory: List.unmodifiable(_diagnosticsLog),
+            );
           }
         }
-
-        return EmotionHealthState(
-          status: EmotionBackendStatus.online,
-          activeUrl: url,
-          responseTimeMs: latency,
-          retryAttempt: 0,
-          retryCountdown: 0,
-          errorMessage: null,
-          serverVersion: version,
-          deviceType: state.deviceType,
-          lastSuccessTime: state.lastSuccessTime,
-          uptime: uptimeStr,
-          connectionHistory: List.unmodifiable(_diagnosticsLog),
-        );
       }
       logDiagnostic(
         "Invalid /health response from $url: ${response.statusCode} - ${response.data}",
       );
     } catch (e) {
-      _lastException = e;
-      if (e is DioException) {
-        _lastStatusCode = e.response?.statusCode;
-      }
       logDiagnostic(
         "HTTP /health check failed for $url: ${_parseException(url, e)}",
       );
@@ -549,76 +559,91 @@ class BackendConnectionManager {
     logDiagnostic("Starting connection check (passive: $isPassive)...");
 
     if (!isPassive) {
-      // Reset attempts if the current state is offline or we previously reached max retries.
-      if (state.status == EmotionBackendStatus.offline ||
-          state.status == EmotionBackendStatus.unknown ||
-          _connectionAttempts >= 6) {
-        _connectionAttempts = 0;
-        logDiagnostic("Resetting connection attempt count to 0.");
-      }
-
-      if (_connectionAttempts == 0) {
-        _firstAttemptTime = DateTime.now();
-      }
-
       state = state.copyWith(
         status: EmotionBackendStatus.checking,
-        retryAttempt: _connectionAttempts + 1,
+        retryAttempt: 1,
         errorMessage: null,
       );
     }
 
-    final isCurrentlyOnline = state.status == EmotionBackendStatus.online;
-    final timeout = isCurrentlyOnline ? const Duration(seconds: 15) : const Duration(seconds: 120);
+    try {
+      final maxAttempts = isPassive ? 1 : 12; // 12 attempts
+      final backoffDelays = [3, 5, 7, 15, 30]; // Delay BEFORE Attempt 2, 3, 4, 5, 6 is delays[attempt-1]
 
-    Timer? slowCheckTimer;
-    if (!isPassive && !isCurrentlyOnline) {
-      slowCheckTimer = Timer(const Duration(seconds: 3), () {
-        if (_isChecking && state.status == EmotionBackendStatus.checking) {
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (!isPassive) {
           state = state.copyWith(
-            status: EmotionBackendStatus.wakingServer,
-            errorMessage: "Cloud server is waking up. Please wait...",
+            status: EmotionBackendStatus.checking,
+            retryAttempt: attempt,
+            retryCountdown: 0,
           );
         }
-      });
-    }
 
-    try {
-      // 1. Generate discovery candidates
-      final candidates = await _getDiscoveryCandidates();
+        // Check network connectivity first
+        final connectivityResult = await _connectivity.checkConnectivity();
+        final hasInternet = connectivityResult.any((r) => r != ConnectivityResult.none);
+        if (!hasInternet) {
+          logDiagnostic("No internet connection detected.");
+          if (!isPassive) {
+            state = state.copyWith(
+              status: EmotionBackendStatus.noInternet,
+              retryAttempt: attempt,
+              errorMessage: "No internet connection. Please check your Wi-Fi or mobile data.",
+            );
+          }
+          if (attempt < maxAttempts) {
+            // Determine delay for next attempt
+            int baseDelay = 60;
+            if (attempt <= backoffDelays.length) {
+              baseDelay = backoffDelays[attempt - 1];
+            }
+            final jitter = Random().nextInt(4); // 0 to 3 seconds
+            final delay = baseDelay + jitter;
 
-      // If candidates list is empty, handle failure directly
-      if (candidates.isEmpty) {
-        logDiagnostic("No backend candidates resolved.");
-        slowCheckTimer?.cancel();
-        _handleFailure(isPassive, errorMsg: "No valid backend URL configured.");
-        _isChecking = false;
-        return;
-      }
+            logDiagnostic("No Internet. Retrying attempt #${attempt + 1} in $delay seconds (jitter: $jitter)...");
 
-      // Check network connectivity first
-      final connectivityResult = await _connectivity.checkConnectivity();
-      final hasInternet = connectivityResult.any((r) => r != ConnectivityResult.none);
-      if (!hasInternet) {
-        logDiagnostic("No internet connection detected.");
-        slowCheckTimer?.cancel();
-        _handleFailure(isPassive, errorMsg: "No internet connection. Please check your Wi-Fi or mobile data.");
-        _isChecking = false;
-        return;
-      }
+            for (int c = delay; c > 0; c--) {
+              if (!isPassive) {
+                state = state.copyWith(retryCountdown: c);
+              }
+              await Future.delayed(const Duration(seconds: 1));
+            }
+            continue;
+          } else {
+            break;
+          }
+        }
 
-      // 2. Discover active healthy endpoint
-      final resolvedUrl = await _discoverActiveEndpoint(candidates, timeout);
+        final candidates = await _getDiscoveryCandidates();
+        if (candidates.isEmpty) {
+          logDiagnostic("No backend candidates resolved.");
+          if (!isPassive) {
+            state = state.copyWith(
+              status: EmotionBackendStatus.offline,
+              retryAttempt: attempt,
+              errorMessage: "No valid backend URL configured.",
+            );
+          }
+          break;
+        }
 
-      slowCheckTimer?.cancel();
+        String? resolvedUrl;
+        EmotionHealthState? successState;
+        String? lastErrorMsg;
+        bool isWaking = false;
+        bool is404 = false;
 
-      if (resolvedUrl != null) {
-        // 3. Verify HTTP health
-        final successState = await _checkUrlHealth(resolvedUrl, timeout: timeout);
-        if (successState != null) {
+        try {
+          resolvedUrl = await _discoverActiveEndpoint(candidates, const Duration(seconds: 20));
+          if (resolvedUrl != null) {
+            successState = await _checkUrlHealth(resolvedUrl, timeout: const Duration(seconds: 20));
+          }
+        } catch (e) {
+          logDiagnostic("Endpoint discovery error: $e");
+        }
+
+        if (successState != null && resolvedUrl != null) {
           final timeStr = DateTime.now().toLocal().toString().split('.')[0];
-          _connectionAttempts = 0;
-          _firstAttemptTime = null;
 
           await _secureStorage.write(
             key: 'last_success_backend_url',
@@ -639,16 +664,92 @@ class BackendConnectionManager {
           );
 
           _startHeartbeat();
-          _isChecking = false;
           return;
+        }
+
+        // Failure logic: classify error for primary candidate
+        final primaryUrl = candidates.first;
+        try {
+          final response = await _dio!.get(
+            '$primaryUrl/health',
+            options: Options(
+              connectTimeout: const Duration(seconds: 20),
+              receiveTimeout: const Duration(seconds: 20),
+              sendTimeout: const Duration(seconds: 20),
+            ),
+          );
+          lastErrorMsg = "Server returned ${response.statusCode} with invalid body.";
+        } catch (e) {
+          lastErrorMsg = _parseException(primaryUrl, e);
+          if (e is DioException) {
+            final code = e.response?.statusCode;
+            if (code == 502 || code == 503 || code == 504) {
+              isWaking = true;
+            } else if (code == 404) {
+              is404 = true;
+            } else if (e.type == DioExceptionType.connectionTimeout ||
+                       e.type == DioExceptionType.receiveTimeout ||
+                       e.type == DioExceptionType.sendTimeout) {
+              isWaking = true;
+            }
+          } else if (e is FormatException && e.message == "Model not ready") {
+            isWaking = true;
+          }
+        }
+
+        // Calculate backoff delay with jitter
+        int baseDelay = 60;
+        if (attempt <= backoffDelays.length) {
+          baseDelay = backoffDelays[attempt - 1];
+        }
+        final jitter = Random().nextInt(4); // 0 to 3 seconds
+        final currentDelay = baseDelay + jitter;
+
+        if (!isPassive) {
+          EmotionBackendStatus nextStatus;
+          String displayMsg;
+          if (isWaking) {
+            nextStatus = EmotionBackendStatus.wakingServer;
+            displayMsg = "Cloud server is starting. Retrying automatically...";
+          } else if (is404) {
+            nextStatus = EmotionBackendStatus.offline;
+            displayMsg = "/health endpoint not found. Verify backend configuration.";
+          } else {
+            nextStatus = EmotionBackendStatus.offline;
+            displayMsg = lastErrorMsg;
+          }
+
+          state = state.copyWith(
+            status: nextStatus,
+            retryAttempt: attempt,
+            retryCountdown: attempt < maxAttempts ? currentDelay : 0,
+            errorMessage: displayMsg,
+          );
+        }
+
+        if (attempt < maxAttempts) {
+          logDiagnostic("Attempt #$attempt failed. Retrying in $currentDelay seconds...");
+          for (int c = currentDelay; c > 0; c--) {
+            if (!isPassive) {
+              state = state.copyWith(retryCountdown: c);
+            }
+            await Future.delayed(const Duration(seconds: 1));
+          }
+          if (!isPassive) {
+            state = state.copyWith(retryCountdown: 0);
+          }
         }
       }
 
-      _handleFailure(isPassive);
+      if (!isPassive && state.status != EmotionBackendStatus.online) {
+        state = state.copyWith(
+          status: EmotionBackendStatus.offline,
+          retryCountdown: 0,
+          errorMessage: state.errorMessage ?? "Unable to connect to the emotion service.",
+        );
+      }
     } catch (e) {
-      logDiagnostic("Connection check error: $e");
-      slowCheckTimer?.cancel();
-      _handleFailure(isPassive);
+      logDiagnostic("Connection check loop error: $e");
     } finally {
       _isChecking = false;
     }
@@ -657,129 +758,6 @@ class BackendConnectionManager {
   void setStatus(EmotionBackendStatus status) {
     logDiagnostic("Externally setting status: $status");
     state = state.copyWith(status: status);
-  }
-
-  void _handleFailure(bool isPassive, {String? errorMsg}) {
-    if (isPassive) {
-      logDiagnostic(
-        "Passive background probe failed. Backend remains offline.",
-      );
-      return;
-    }
-
-    _connectionAttempts++;
-    logDiagnostic("Connection attempt #$_connectionAttempts failed.");
-
-    // Determine the next status and error message based on the last exception
-    EmotionBackendStatus nextStatus = EmotionBackendStatus.offline;
-    String displayMsg = errorMsg ?? "Unable to connect to the emotion service.";
-
-    final e = _lastException;
-    final code = _lastStatusCode;
-
-    bool isWaking = false;
-
-    if (e != null) {
-      final parsedError = _parseException(
-        state.activeUrl.isNotEmpty ? state.activeUrl : BackendConfig.configuredUrl,
-        e,
-      );
-      displayMsg = parsedError;
-
-      if (e is DioException) {
-        if (code == 502 || code == 503 || code == 504) {
-          isWaking = true;
-          displayMsg = "Cloud server is waking up. Please wait...\nTemporary hosting issue (HTTP $code).";
-        } else if (code == 404) {
-          nextStatus = EmotionBackendStatus.offline;
-          displayMsg = "HTTP 404: Health endpoint is incorrect. Please verify backend routes.";
-        } else if (e.type == DioExceptionType.connectionTimeout || 
-                   e.type == DioExceptionType.receiveTimeout || 
-                   e.type == DioExceptionType.sendTimeout) {
-          if (_connectionAttempts <= 2) {
-            isWaking = true;
-            displayMsg = "Cloud server is waking up. Please wait...\nConnection timeout.";
-          } else {
-            displayMsg = "Connection timeout: Server did not respond within 120 seconds.";
-          }
-        } else if (e.type == DioExceptionType.connectionError) {
-          final errStr = e.error.toString().toLowerCase();
-          if (errStr.contains("connection refused") || errStr.contains("111")) {
-            if (_connectionAttempts <= 2) {
-              isWaking = true;
-              displayMsg = "Cloud server is waking up. Please wait...\nConnection refused (Server is starting up).";
-            } else {
-              displayMsg = "Connection refused: Server is waking up or not running on port.";
-            }
-          }
-        }
-      } else if (e is FormatException) {
-        if (e.message == "Model not ready") {
-          isWaking = true;
-          displayMsg = "Cloud server is waking up. Please wait...\nModel loading progress in background.";
-        }
-      }
-    }
-
-    if (isWaking) {
-      nextStatus = EmotionBackendStatus.wakingServer;
-    } else {
-      if (_connectionAttempts <= 4) {
-        nextStatus = EmotionBackendStatus.degraded;
-      } else {
-        nextStatus = EmotionBackendStatus.offline;
-      }
-    }
-
-    // Check maximum automatic waiting period of approximately 2 minutes (120 seconds)
-    final totalElapsed = _firstAttemptTime != null 
-        ? DateTime.now().difference(_firstAttemptTime!).inSeconds 
-        : 0;
-
-    if (totalElapsed >= 120) {
-      logDiagnostic("Reached maximum automatic waiting period of 2 minutes ($totalElapsed seconds). Stopping automatic retries.");
-      state = state.copyWith(
-        status: EmotionBackendStatus.offline,
-        activeUrl: '',
-        retryAttempt: _connectionAttempts,
-        retryCountdown: 0,
-        errorMessage: displayMsg.contains("timeout") 
-            ? "Connection timeout: Server did not respond within 120 seconds.\nTap Retry to reconnect."
-            : "$displayMsg\nTap Retry to reconnect.",
-      );
-      _firstAttemptTime = null;
-      return;
-    }
-
-    const delaySeconds = 5; // Retry automatically every 5 seconds per Task 8!
-    logDiagnostic(
-      "Scheduling automatic retry attempt #${_connectionAttempts + 1} in $delaySeconds seconds...",
-    );
-
-    state = state.copyWith(
-      status: nextStatus,
-      activeUrl: '',
-      retryAttempt: _connectionAttempts,
-      retryCountdown: delaySeconds,
-      errorMessage: displayMsg,
-    );
-
-    _startCountdown(delaySeconds);
-  }
-
-  void _startCountdown(int seconds) {
-    _countdownTimer?.cancel();
-    int current = seconds;
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      current--;
-      if (current <= 0) {
-        timer.cancel();
-        state = state.copyWith(retryCountdown: 0);
-        checkConnection();
-      } else {
-        state = state.copyWith(retryCountdown: current);
-      }
-    });
   }
 
   void _startHeartbeat() {
@@ -808,7 +786,6 @@ class BackendConnectionManager {
           status: EmotionBackendStatus.degraded,
           activeUrl: '',
         );
-        _connectionAttempts = 0;
         checkConnection();
       }
     });
@@ -827,56 +804,53 @@ class BackendConnectionManager {
   }
 
   String _parseException(String url, dynamic e) {
-    final healthCheckUrl = "$url/health";
     if (e is DioException) {
       final code = e.response?.statusCode;
-      final typeStr = e.type.toString().split('.').last;
-      
       switch (e.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.receiveTimeout:
         case DioExceptionType.sendTimeout:
-          return "Connection timeout [$typeStr] at $healthCheckUrl: Server did not respond within 120 seconds.";
+          return "Connection timeout: Server did not respond within 20 seconds.";
         case DioExceptionType.badResponse:
           if (code == 404) {
-            return "HTTP 404 Not Found at $healthCheckUrl: Health endpoint is incorrect.";
+            return "HTTP 404 Route mismatch: Verify backend endpoints.";
           } else if (code == 500) {
-            return "Internal Server Error (HTTP 500) at $healthCheckUrl.";
+            return "Internal Server Error (HTTP 500) at $url.";
           } else if (code == 502 || code == 503 || code == 504) {
-            return "Temporary hosting issue (HTTP $code) at $healthCheckUrl: Server is waking up, down, or restarting.";
+            return "Temporary hosting issue (HTTP $code): Server is down or restarting.";
           }
-          return "HTTP error $code (${e.response?.statusMessage ?? 'Bad Response'}) at $healthCheckUrl.";
+          return "HTTP error $code: ${e.response?.statusMessage ?? 'Invalid response'}.";
         case DioExceptionType.connectionError:
           final errStr = e.error.toString();
           if (errStr.contains("Connection refused") || errStr.contains("111")) {
-            return "Connection refused [ConnectionError] at $healthCheckUrl: Server is starting up or port is closed.";
+            return "Connection refused: Server is waking up or not running on port.";
           }
           if (errStr.contains("Failed host lookup")) {
-            return "DNS lookup failure [ConnectionError] at $healthCheckUrl: Check your internet connection.";
+            return "DNS lookup failure: Check your network connectivity.";
           }
           if (errStr.contains("HandshakeException") ||
               errStr.contains("CERTIFICATE_VERIFY_FAILED")) {
-            return "SSL handshake failure [ConnectionError] at $healthCheckUrl: Secure connection could not be established.";
+            return "SSL handshake failure: Secure connection failed.";
           }
-          return "Connection error ($errStr) at $healthCheckUrl.";
+          return "Connection error: $errStr";
         default:
-          return "Network error [${e.type}] at $healthCheckUrl: ${e.message}";
+          return "Network error: ${e.message}";
       }
     }
     final errStr = e.toString();
     if (errStr.contains("SocketException")) {
       if (errStr.contains("Connection refused")) {
-        return "Connection refused [SocketException] at $healthCheckUrl: Server port is closed.";
+        return "Connection refused: Server port is closed.";
       }
-      return "Network socket exception [SocketException] at $healthCheckUrl: Host is unreachable.";
+      return "Network socket exception: Host unreachable.";
     }
     if (e is FormatException) {
       if (e.message == "Model not ready") {
-        return "Model not ready [FormatException] at $healthCheckUrl: Cold start loading progress in background.";
+        return "Model not ready: Cold start loading progress in background.";
       }
-      return "JSON parsing error [FormatException] at $healthCheckUrl: Response was not valid JSON.";
+      return "JSON parsing error: Response was not valid JSON.";
     }
-    return "Error [${e.runtimeType}] at $healthCheckUrl: $errStr";
+    return "Error: $errStr";
   }
 
   void dispose() {

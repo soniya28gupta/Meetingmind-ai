@@ -1483,7 +1483,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.wakingServer:
       case EmotionBackendStatus.reconnecting:
       case EmotionBackendStatus.retrying:
-        statusLabel = 'Cloud server is waking up. Please wait...';
+        statusLabel = 'Cloud server is starting. Retrying automatically...';
         statusBadgeColor = Colors.orange.withValues(alpha: 0.15);
         statusBadgeText = Colors.orange;
         statusIcon = Icons.hourglass_empty_rounded;
@@ -1491,12 +1491,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         prefix = '🟠 ';
         break;
       case EmotionBackendStatus.degraded:
-        statusLabel = 'Unable to connect to the emotion service.';
+        statusLabel = 'Service temporarily unavailable';
         statusBadgeColor = Colors.yellow.withValues(alpha: 0.15);
         statusBadgeText = Colors.yellow[700] ?? Colors.yellow;
         statusIcon = Icons.warning_amber_rounded;
         badgeText = 'DEGRADED';
         prefix = '🟡 ';
+        break;
+      case EmotionBackendStatus.noInternet:
+        statusLabel = 'No internet connection';
+        statusBadgeColor = AppColors.error.withValues(alpha: 0.15);
+        statusBadgeText = AppColors.error;
+        statusIcon = Icons.wifi_off_rounded;
+        badgeText = 'OFFLINE';
+        prefix = '🔴 ';
         break;
       case EmotionBackendStatus.offline:
       case EmotionBackendStatus.fallbackActive:

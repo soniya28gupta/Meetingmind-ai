@@ -139,7 +139,7 @@ def health():
         "service": "MeetingMind Emotion API",
         "version": "1.0.0",
         "model_loaded": True
-    })
+    }), 200
 
 @app.route('/ready', methods=['GET'])
 def ready():

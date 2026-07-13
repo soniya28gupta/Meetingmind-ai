@@ -4,10 +4,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 enum BackendEnv { local, debug, release, production }
 
 class ApiConfig {
-  static const String productionBaseUrl = String.fromEnvironment(
+  static const String emotionApiUrl = String.fromEnvironment(
     'EMOTION_API_URL',
     defaultValue: 'https://meetingmind-emotion-api.onrender.com',
   );
+  static const String productionBaseUrl = emotionApiUrl;
 }
 
 class BackendConfig {

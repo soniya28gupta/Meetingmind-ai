@@ -19,6 +19,7 @@ enum EmotionBackendStatus {
   online,
   degraded,
   offline,
+  noInternet,
   connected, // Keep for backward compatibility/mapping
   connecting, // Keep for backward compatibility/mapping
   reconnecting, // Keep for backward compatibility/mapping
@@ -63,6 +64,7 @@ class EmotionHealthState {
 
   bool get isOffline =>
       status == EmotionBackendStatus.offline ||
+      status == EmotionBackendStatus.noInternet ||
       status == EmotionBackendStatus.fallbackActive ||
       status == EmotionBackendStatus.unknown;
 
