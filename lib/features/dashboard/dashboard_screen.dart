@@ -1464,7 +1464,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.connected:
       case EmotionBackendStatus.processing:
       case EmotionBackendStatus.analyzing:
-        statusLabel = 'Emotion service is online and ready.';
+        statusLabel = 'Emotion Service Online';
         statusBadgeColor = AppColors.success.withValues(alpha: 0.15);
         statusBadgeText = AppColors.success;
         statusIcon = Icons.check_circle_rounded;
@@ -1483,7 +1483,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.wakingServer:
       case EmotionBackendStatus.reconnecting:
       case EmotionBackendStatus.retrying:
-        statusLabel = 'Cloud server is starting. Retrying automatically...';
+        statusLabel = 'Starting cloud emotion service...';
         statusBadgeColor = Colors.orange.withValues(alpha: 0.15);
         statusBadgeText = Colors.orange;
         statusIcon = Icons.hourglass_empty_rounded;
@@ -1491,12 +1491,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         prefix = '🟠 ';
         break;
       case EmotionBackendStatus.degraded:
-        statusLabel = 'Service temporarily unavailable';
+        statusLabel = 'Cloud backend is temporarily unavailable';
         statusBadgeColor = Colors.yellow.withValues(alpha: 0.15);
         statusBadgeText = Colors.yellow[700] ?? Colors.yellow;
         statusIcon = Icons.warning_amber_rounded;
         badgeText = 'DEGRADED';
-        prefix = '🟡 ';
+        prefix = '🟠 ';
+        break;
+      case EmotionBackendStatus.configurationError:
+        statusLabel = 'Health endpoint missing from deployed backend';
+        statusBadgeColor = AppColors.error.withValues(alpha: 0.15);
+        statusBadgeText = AppColors.error;
+        statusIcon = Icons.error_outline_rounded;
+        badgeText = 'OFFLINE';
+        prefix = '🔴 ';
         break;
       case EmotionBackendStatus.noInternet:
         statusLabel = 'No internet connection';
@@ -1509,7 +1517,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case EmotionBackendStatus.offline:
       case EmotionBackendStatus.fallbackActive:
       case EmotionBackendStatus.unknown:
-      default:
         statusLabel = 'Unable to connect to the emotion service.';
         statusBadgeColor = AppColors.error.withValues(alpha: 0.15);
         statusBadgeText = AppColors.error;
@@ -1517,6 +1524,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         badgeText = 'OFFLINE';
         prefix = '🔴 ';
         break;
+
     }
 
     if (_isEmotionSectionCollapsed) {

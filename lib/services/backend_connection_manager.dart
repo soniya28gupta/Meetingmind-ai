@@ -580,13 +580,7 @@ class BackendConnectionManager {
 
     try {
       final maxAttempts = isPassive ? 1 : 12; // 12 attempts
-      final backoffDelays = [
-        3,
-        5,
-        7,
-        15,
-        30,
-      ]; // Delay BEFORE Attempt 2, 3, 4, 5, 6 is delays[attempt-1]
+      final backoffDelays = [3, 5, 7, 15, 30]; // Delay BEFORE Attempt 2, 3, 4, 5, 6 is delays[attempt-1]
 
       for (int attempt = 1; attempt <= maxAttempts; attempt++) {
         if (!isPassive) {
@@ -599,17 +593,14 @@ class BackendConnectionManager {
 
         // Check network connectivity first
         final connectivityResult = await _connectivity.checkConnectivity();
-        final hasInternet = connectivityResult.any(
-          (r) => r != ConnectivityResult.none,
-        );
+        final hasInternet = connectivityResult.any((r) => r != ConnectivityResult.none);
         if (!hasInternet) {
           logDiagnostic("No internet connection detected.");
           if (!isPassive) {
             state = state.copyWith(
               status: EmotionBackendStatus.noInternet,
               retryAttempt: attempt,
-              errorMessage:
-                  "No internet connection. Please check your Wi-Fi or mobile data.",
+              errorMessage: "No internet connection",
             );
           }
           if (attempt < maxAttempts) {
@@ -621,9 +612,7 @@ class BackendConnectionManager {
             final jitter = Random().nextInt(4); // 0 to 3 seconds
             final delay = baseDelay + jitter;
 
-            logDiagnostic(
-              "No Internet. Retrying attempt #${attempt + 1} in $delay seconds (jitter: $jitter)...",
-            );
+            logDiagnostic("No Internet. Retrying attempt #${attempt + 1} in $delay seconds (jitter: $jitter)...");
 
             for (int c = delay; c > 0; c--) {
               if (!isPassive) {
@@ -653,22 +642,24 @@ class BackendConnectionManager {
         String? resolvedUrl;
         EmotionHealthState? successState;
         String? lastErrorMsg;
+        
         bool isWaking = false;
         bool is404 = false;
+        bool is500 = false;
+        bool isTempUnavailable = false;
+        bool isTimeout = false;
+        bool isInvalidJson = false;
 
         try {
-          resolvedUrl = await _discoverActiveEndpoint(
-            candidates,
-            const Duration(seconds: 20),
-          );
+          resolvedUrl = await _discoverActiveEndpoint(candidates, const Duration(seconds: 20));
           if (resolvedUrl != null) {
-            successState = await _checkUrlHealth(
-              resolvedUrl,
-              timeout: const Duration(seconds: 20),
-            );
+            successState = await _checkUrlHealth(resolvedUrl, timeout: const Duration(seconds: 20));
           }
         } catch (e) {
           logDiagnostic("Endpoint discovery error: $e");
+          if (e is FormatException) {
+            isInvalidJson = true;
+          }
         }
 
         if (successState != null && resolvedUrl != null) {
@@ -699,7 +690,7 @@ class BackendConnectionManager {
         // Failure logic: classify error for primary candidate
         final primaryUrl = candidates.first;
         try {
-          final response = await _dio!.get(
+          await _dio!.get(
             '$primaryUrl/health',
             options: Options(
               connectTimeout: const Duration(seconds: 20),
@@ -707,23 +698,33 @@ class BackendConnectionManager {
               sendTimeout: const Duration(seconds: 20),
             ),
           );
-          lastErrorMsg =
-              "Server returned ${response.statusCode} with invalid body.";
+          isInvalidJson = true; // Succeeded but successState was null
         } catch (e) {
           lastErrorMsg = _parseException(primaryUrl, e);
           if (e is DioException) {
             final code = e.response?.statusCode;
-            if (code == 502 || code == 503 || code == 504) {
+            final data = e.response?.data;
+            final hasStartingJson = (data is Map && data['status'] == 'starting');
+            
+            if (code == 503 && hasStartingJson) {
               isWaking = true;
             } else if (code == 404) {
               is404 = true;
+            } else if (code == 500) {
+              is500 = true;
+            } else if (code == 502 || code == 503 || code == 504) {
+              isTempUnavailable = true;
             } else if (e.type == DioExceptionType.connectionTimeout ||
-                e.type == DioExceptionType.receiveTimeout ||
-                e.type == DioExceptionType.sendTimeout) {
-              isWaking = true;
+                       e.type == DioExceptionType.receiveTimeout ||
+                       e.type == DioExceptionType.sendTimeout) {
+              isTimeout = true;
             }
-          } else if (e is FormatException && e.message == "Model not ready") {
-            isWaking = true;
+          } else if (e is FormatException) {
+            if (e.message == "Model not ready") {
+              isWaking = true;
+            } else {
+              isInvalidJson = true;
+            }
           }
         }
 
@@ -738,16 +739,36 @@ class BackendConnectionManager {
         if (!isPassive) {
           EmotionBackendStatus nextStatus;
           String displayMsg;
-          if (isWaking) {
+          
+          if (is404) {
+            nextStatus = EmotionBackendStatus.configurationError;
+            displayMsg = "Health endpoint missing from deployed backend";
+            state = state.copyWith(
+              status: nextStatus,
+              retryAttempt: attempt,
+              retryCountdown: 0,
+              errorMessage: displayMsg,
+            );
+            logDiagnostic("Configuration error (HTTP 404) at $primaryUrl/health. Halting retries.");
+            break; // Stop retrying for HTTP 404 CONFIGURATION_ERROR
+          } else if (isWaking) {
             nextStatus = EmotionBackendStatus.wakingServer;
-            displayMsg = "Cloud server is starting. Retrying automatically...";
-          } else if (is404) {
+            displayMsg = "Starting cloud emotion service...";
+          } else if (is500) {
             nextStatus = EmotionBackendStatus.offline;
-            displayMsg =
-                "/health endpoint not found. Verify backend configuration.";
+            displayMsg = "Emotion backend internal error";
+          } else if (isTempUnavailable) {
+            nextStatus = EmotionBackendStatus.degraded;
+            displayMsg = "Cloud backend is temporarily unavailable";
+          } else if (isTimeout) {
+            nextStatus = EmotionBackendStatus.degraded;
+            displayMsg = "Cloud service is taking longer than expected";
+          } else if (isInvalidJson) {
+            nextStatus = EmotionBackendStatus.offline;
+            displayMsg = "Invalid response received from emotion backend";
           } else {
             nextStatus = EmotionBackendStatus.offline;
-            displayMsg = lastErrorMsg;
+            displayMsg = lastErrorMsg ?? "Unable to connect to the emotion service.";
           }
 
           state = state.copyWith(
@@ -759,9 +780,7 @@ class BackendConnectionManager {
         }
 
         if (attempt < maxAttempts) {
-          logDiagnostic(
-            "Attempt #$attempt failed. Retrying in $currentDelay seconds...",
-          );
+          logDiagnostic("Attempt #$attempt failed. Retrying in $currentDelay seconds...");
           for (int c = currentDelay; c > 0; c--) {
             if (!isPassive) {
               state = state.copyWith(retryCountdown: c);
@@ -774,12 +793,11 @@ class BackendConnectionManager {
         }
       }
 
-      if (!isPassive && state.status != EmotionBackendStatus.online) {
+      if (!isPassive && state.status != EmotionBackendStatus.online && state.status != EmotionBackendStatus.configurationError) {
         state = state.copyWith(
           status: EmotionBackendStatus.offline,
           retryCountdown: 0,
-          errorMessage:
-              state.errorMessage ?? "Unable to connect to the emotion service.",
+          errorMessage: state.errorMessage ?? "Unable to connect to the emotion service.",
         );
       }
     } catch (e) {

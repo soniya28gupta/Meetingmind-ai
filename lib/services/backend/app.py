@@ -14,6 +14,7 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 start_time = time.time()
+model_loaded = True
 
 @app.after_request
 def add_cors_headers(response):
@@ -134,6 +135,13 @@ def root():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint returning detailed status."""
+    if not model_loaded:
+        return jsonify({
+            "status": "starting",
+            "service": "MeetingMind Emotion API",
+            "version": "1.0.0",
+            "model_loaded": False
+        }), 503
     return jsonify({
         "status": "healthy",
         "service": "MeetingMind Emotion API",
@@ -144,10 +152,15 @@ def health():
 @app.route('/ready', methods=['GET'])
 def ready():
     """Ready check endpoint."""
+    if not model_loaded:
+        return jsonify({
+            "status": "starting",
+            "model_loaded": False
+        }), 503
     return jsonify({
         "status": "ready",
         "model_loaded": True
-    })
+    }), 200
 
 @app.route('/emotion', methods=['GET', 'POST'])
 def emotion():

@@ -8,10 +8,15 @@ class ApiConfig {
     'EMOTION_API_URL',
     defaultValue: 'https://meetingmind-emotion-api.onrender.com',
   );
-  static const String productionBaseUrl = emotionApiUrl;
 
-  static String get healthUrl =>
-      '${emotionApiUrl.replaceAll(RegExp(r"/+$"), "")}/health';
+  static String get normalizedEmotionApiUrl => emotionApiUrl.replaceAll(
+        RegExp(r'/+$'),
+        '',
+      );
+
+  static String get healthUrl => '$normalizedEmotionApiUrl/health';
+
+  static String get readinessUrl => '$normalizedEmotionApiUrl/ready';
 }
 
 class BackendConfig {
@@ -35,9 +40,8 @@ class BackendConfig {
     }
   }
 
-  /// Default production API endpoint.
   static String get defaultProductionUrl =>
-      _normalizeUrl(ApiConfig.productionBaseUrl);
+      ApiConfig.normalizedEmotionApiUrl;
 
   /// Resolves the backend base URL dynamically according to environment priority.
   static String get configuredUrl {
